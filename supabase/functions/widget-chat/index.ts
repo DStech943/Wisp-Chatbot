@@ -1,3 +1,5 @@
+import { getSecretFromVault } from "../_shared/vault.ts";
+
 type Brand = {
   brand_id: string;
   site_id: string;
@@ -21,8 +23,6 @@ const SUPABASE_URL = trimTrailingSlash(
   Deno.env.get("SUPABASE_URL") || "https://supabasedb.datastraw.in",
 );
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-const N8N_WEBHOOK_URL = Deno.env.get("N8N_WEBHOOK_URL") || "";
-const N8N_SHARED_SECRET = Deno.env.get("N8N_SHARED_SECRET") || "";
 
 const jsonHeaders = {
   "Content-Type": "application/json",
@@ -46,7 +46,7 @@ Deno.serve(async (request) => {
     return jsonResponse({ reply: "Origin required" }, 403);
   }
 
-  if (!SUPABASE_SERVICE_ROLE_KEY || !N8N_WEBHOOK_URL) {
+  if (!SUPABASE_SERVICE_ROLE_KEY) {
     return jsonResponse(
       { reply: "Sorry, I'm having trouble right now. Please try again." },
       500,
@@ -95,7 +95,18 @@ Deno.serve(async (request) => {
   };
 
   try {
-    const n8nResponse = await forwardToN8n(n8nPayload);
+    const n8nWebhookUrl = await getSecretFromVault("N8N_WEBHOOK_URL");
+    const n8nSharedSecret = await getSecretFromVault("N8N_SHARED_SECRET");
+
+    if (!n8nWebhookUrl) {
+      return jsonResponse(
+        { reply: "Sorry, I'm having trouble right now. Please try again." },
+        500,
+        origin,
+      );
+    }
+
+    const n8nResponse = await forwardToN8n(n8nWebhookUrl, n8nSharedSecret, n8nPayload);
     return jsonResponse(n8nResponse.body, n8nResponse.status, origin);
   } catch {
     return jsonResponse(
@@ -193,7 +204,11 @@ async function getBrand(siteId: string): Promise<Brand | null> {
   return rows[0] as Brand;
 }
 
-async function forwardToN8n(payload: Record<string, unknown>): Promise<{ status: number; body: unknown }> {
+async function forwardToN8n(
+  webhookUrl: string,
+  sharedSecret: string | null,
+  payload: Record<string, unknown>,
+): Promise<{ status: number; body: unknown }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60_000);
 
@@ -202,11 +217,11 @@ async function forwardToN8n(payload: Record<string, unknown>): Promise<{ status:
       "Content-Type": "application/json",
     });
 
-    if (N8N_SHARED_SECRET) {
-      headers.set("X-Wisp-Edge-Secret", N8N_SHARED_SECRET);
+    if (sharedSecret) {
+      headers.set("X-Wisp-Edge-Secret", sharedSecret);
     }
 
-    const response = await fetch(N8N_WEBHOOK_URL, {
+    const response = await fetch(webhookUrl, {
       method: "POST",
       headers,
       body: JSON.stringify(payload),

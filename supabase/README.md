@@ -101,18 +101,23 @@ set status = 'active'
 where site_id = 'test-brand.com';
 ```
 
-## 3. Configure Function Secrets
+## 3. Configure Function Secrets And Vault
 
 Set these Edge Function secrets:
 
 ```powershell
 supabase secrets set SUPABASE_URL="https://supabasedb.datastraw.in"
 supabase secrets set SUPABASE_SERVICE_ROLE_KEY="YOUR_SERVICE_ROLE_KEY"
-supabase secrets set N8N_WEBHOOK_URL="https://n8n.srv1327344.hstgr.cloud/webhook/widget-chat"
-supabase secrets set N8N_SHARED_SECRET="YOUR_SHARED_EDGE_TO_N8N_SECRET"
 ```
 
-`N8N_SHARED_SECRET` is optional in the code, but recommended. In n8n, check the incoming `X-Wisp-Edge-Secret` header before calling any backend.
+Store these values in Supabase Vault:
+
+```text
+N8N_WEBHOOK_URL=https://n8n.srv1327344.hstgr.cloud/webhook/widget-chat
+N8N_SHARED_SECRET=YOUR_SHARED_EDGE_TO_N8N_SECRET
+```
+
+`N8N_SHARED_SECRET` is sent to n8n as `X-Wisp-Edge-Secret`. In n8n, check the incoming `X-Wisp-Edge-Secret` header before calling any backend.
 
 ## 4. Deploy
 
@@ -175,7 +180,7 @@ Then keep the existing IF node and HTTP Request node pattern:
 
 Set the same secret in both places:
 
-- Supabase Edge Function secret: `N8N_SHARED_SECRET`
+- Supabase Vault secret: `N8N_SHARED_SECRET`
 - n8n environment variable: `WISP_EDGE_SECRET`
 
 ## 6. Update Widget Installs
