@@ -18,7 +18,7 @@ This adds a pending entry to `brands.json` for local onboarding tracking.
 
 ## 2. Add The Brand In Supabase
 
-Add the same brand to the Supabase `public.brands` table. The runtime source of truth for allowed origins is Supabase, not this local JSON file.
+Add the same brand to the Supabase `fp3.brands` table. The runtime source of truth for allowed origins is Supabase, not this local JSON file.
 
 See [`../supabase/README.md`](../supabase/README.md) for the table SQL and insert examples.
 

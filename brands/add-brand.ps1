@@ -56,7 +56,7 @@ $updated | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $brandsPath -Enco
 Write-Host "Added brand '$BrandName' with site_id '$SiteId'."
 Write-Host ""
 Write-Host "Checklist:"
-Write-Host "1) Add this site_id and these origins to the Supabase public.brands table"
+Write-Host "1) Add this site_id and these origins to the Supabase fp3.brands table"
 Write-Host "2) Confirm the Widget Chat Edge Function is deployed and pointing to n8n"
 Write-Host "3) Run generate-snippet.ps1 -SiteId $SiteId to get the client's embed code"
 Write-Host "4) After verifying it's live, run set-status.ps1 -SiteId $SiteId -Status active"

@@ -15,7 +15,7 @@ Run this SQL in Supabase SQL Editor:
 ```sql
 create extension if not exists pgcrypto;
 
-create table if not exists public.brands (
+create table if not exists fp3.brands (
   brand_id uuid primary key default gen_random_uuid(),
   site_id text not null unique,
   brand_name text not null,
@@ -31,10 +31,10 @@ create table if not exists public.brands (
   constraint brands_platform_check check (platform in ('web', 'shopify'))
 );
 
-create index if not exists brands_status_idx on public.brands (status);
-create index if not exists brands_allowed_origins_idx on public.brands using gin (allowed_origins);
+create index if not exists brands_status_idx on fp3.brands (status);
+create index if not exists brands_allowed_origins_idx on fp3.brands using gin (allowed_origins);
 
-create or replace function public.set_updated_at()
+create or replace function fp3.set_updated_at()
 returns trigger
 language plpgsql
 as $$
@@ -44,17 +44,17 @@ begin
 end;
 $$;
 
-drop trigger if exists brands_set_updated_at on public.brands;
+drop trigger if exists brands_set_updated_at on fp3.brands;
 
 create trigger brands_set_updated_at
-before update on public.brands
+before update on fp3.brands
 for each row
-execute function public.set_updated_at();
+execute function fp3.set_updated_at();
 
-alter table public.brands enable row level security;
+alter table fp3.brands enable row level security;
 
-revoke all on table public.brands from anon;
-revoke all on table public.brands from authenticated;
+revoke all on table fp3.brands from anon;
+revoke all on table fp3.brands from authenticated;
 ```
 
 The Edge Function uses the service role key, so browser users never read this table directly.
@@ -64,7 +64,7 @@ The Edge Function uses the service role key, so browser users never read this ta
 Example insert:
 
 ```sql
-insert into public.brands (
+insert into fp3.brands (
   site_id,
   brand_name,
   website_url,
@@ -88,7 +88,7 @@ Use origins exactly as browsers send them. `https://example.com` and `https://ww
 To pause a brand:
 
 ```sql
-update public.brands
+update fp3.brands
 set status = 'paused'
 where site_id = 'test-brand.com';
 ```
@@ -96,7 +96,7 @@ where site_id = 'test-brand.com';
 To mark a brand active:
 
 ```sql
-update public.brands
+update fp3.brands
 set status = 'active'
 where site_id = 'test-brand.com';
 ```
@@ -195,3 +195,4 @@ The widget `data-api` should point to the Edge Function:
 ## CORS Note
 
 Browser preflight requests do not include the JSON body, so the function cannot know `site_id` during `OPTIONS`. It echoes the preflight origin so the browser can send the real `POST`, then validates `site_id` and `Origin` before forwarding anything to n8n.
+

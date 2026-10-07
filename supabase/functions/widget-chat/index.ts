@@ -177,6 +177,7 @@ async function getBrand(siteId: string): Promise<Brand | null> {
       "apikey": SUPABASE_SERVICE_ROLE_KEY,
       "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
       "Accept": "application/json",
+      "Accept-Profile": "fp3",
     },
   });
 

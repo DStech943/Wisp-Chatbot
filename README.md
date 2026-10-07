@@ -11,7 +11,7 @@ Brand website or Shopify storefront
         | POST full data-api Edge Function URL
         v
 Supabase Edge Function
-  validates Origin + site_id against public.brands
+  validates Origin + site_id against fp3.brands
   forwards validated requests server-side
         |
         v
