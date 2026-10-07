@@ -1,4 +1,5 @@
 import { getSecretFromVault } from "../_shared/vault.ts";
+import postgres from "https://deno.land/x/postgresjs@v3.4.4/mod.js";
 
 type Brand = {
   brand_id: string;
@@ -121,6 +122,15 @@ function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "");
 }
 
+function getDbUrl(): string {
+  const dbUrl = Deno.env.get("SUPABASE_DB_URL");
+  if (!dbUrl) {
+    throw new Error("SUPABASE_DB_URL is not configured");
+  }
+
+  return dbUrl.replace("supabasedb.datastraw.in", "db").replace(":6543", ":5432");
+}
+
 function corsHeaders(origin: string): HeadersInit {
   return {
     "Access-Control-Allow-Origin": origin,
@@ -174,34 +184,35 @@ function validateWidgetPayload(body: WidgetPayload): string | null {
 }
 
 async function getBrand(siteId: string): Promise<Brand | null> {
-  const url = new URL(`${SUPABASE_URL}/rest/v1/brands`);
-  url.searchParams.set("site_id", `eq.${siteId}`);
-  url.searchParams.set(
-    "select",
-    "brand_id,site_id,brand_name,website_url,backend_url,allowed_origins,platform,status",
-  );
-  url.searchParams.set("limit", "1");
+  const sql = postgres(getDbUrl(), { max: 1 });
 
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      "apikey": SUPABASE_SERVICE_ROLE_KEY,
-      "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      "Accept": "application/json",
-      "Accept-Profile": "fp3",
-    },
-  });
+  try {
+    const rows = await sql<Brand[]>`
+      select
+        brand_id,
+        site_id,
+        brand_name,
+        website_url,
+        backend_url,
+        allowed_origins,
+        platform,
+        status
+      from fp3.brands
+      where site_id = ${siteId}
+      limit 1
+    `;
 
-  if (!response.ok) {
+    if (rows.length === 0) {
+      return null;
+    }
+
+    return rows[0];
+  } catch (error) {
+    console.error("Brand lookup failed", error);
     return null;
+  } finally {
+    await sql.end();
   }
-
-  const rows = await response.json();
-  if (!Array.isArray(rows) || rows.length === 0) {
-    return null;
-  }
-
-  return rows[0] as Brand;
 }
 
 async function forwardToN8n(

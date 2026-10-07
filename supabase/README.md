@@ -57,7 +57,7 @@ revoke all on table fp3.brands from anon;
 revoke all on table fp3.brands from authenticated;
 ```
 
-The Edge Function uses the service role key, so browser users never read this table directly.
+The Edge Function uses the database connection URL to read this table directly, so browser users never read this table directly.
 
 ## 2. Add A Brand
 
