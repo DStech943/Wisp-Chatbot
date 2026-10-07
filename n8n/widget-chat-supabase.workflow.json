@@ -1,0 +1,232 @@
+﻿{
+    "name":  "Widget Chat - Supabase Gateway",
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "httpMethod":  "POST",
+                                         "path":  "widget-chat",
+                                         "responseMode":  "responseNode",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "e8d18599-1543-4529-9083-8199f6dd279c",
+                      "name":  "Widget Chat",
+                      "type":  "n8n-nodes-base.webhook",
+                      "typeVersion":  2.1,
+                      "position":  [
+                                       -640,
+                                       224
+                                   ],
+                      "webhookId":  "widget-chat"
+                  },
+                  {
+                      "parameters":  {
+                                         "mode":  "runOnceForEachItem",
+                                         "jsCode":  "const expectedSecret = process.env.WISP_EDGE_SECRET || \"\";\nconst headers = $json.headers || {};\nconst body = $json.body || {};\n\nconst providedSecret =\n  headers[\"x-wisp-edge-secret\"] ||\n  headers[\"X-Wisp-Edge-Secret\"] ||\n  \"\";\n\nconst ok = !!expectedSecret\n  \u0026\u0026 providedSecret === expectedSecret\n  \u0026\u0026 typeof body.backend_url === \"string\"\n  \u0026\u0026 body.backend_url.startsWith(\"https://\")\n  \u0026\u0026 typeof body.message === \"string\"\n  \u0026\u0026 body.message.length \u003e 0\n  \u0026\u0026 body.message.length \u003c= 1000\n  \u0026\u0026 typeof body.session_id === \"string\"\n  \u0026\u0026 body.session_id.length \u003e 0\n  \u0026\u0026 body.session_id.length \u003c= 100;\n\nreturn {\n  json: {\n    ok,\n    backend: ok ? body.backend_url : null,\n    payload: ok\n      ? {\n          message: body.message,\n          session_id: body.session_id,\n          platform: body.platform || \"web\",\n          page_url: body.page_url || null,\n        }\n      : null,\n  },\n};"
+                                     },
+                      "id":  "3de2cc2f-6799-4988-8fb4-b5651bf06ea8",
+                      "name":  "Resolve Site",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -416,
+                                       224
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "strict",
+                                                                            "version":  3
+                                                                        },
+                                                            "conditions":  [
+                                                                               {
+                                                                                   "id":  "b68be78f-c07d-4286-9f92-e163c3b1ecaa",
+                                                                                   "leftValue":  "={{ $json.ok }}",
+                                                                                   "rightValue":  true,
+                                                                                   "operator":  {
+                                                                                                    "type":  "boolean",
+                                                                                                    "operation":  "true",
+                                                                                                    "singleValue":  true
+                                                                                                }
+                                                                               }
+                                                                           ],
+                                                            "combinator":  "and"
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "6155e73c-0a97-4f44-bc33-bc8385298573",
+                      "name":  "Allowed?",
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2.3,
+                      "position":  [
+                                       -192,
+                                       224
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "={{ $json.backend }}",
+                                         "authentication":  "genericCredentialType",
+                                         "genericAuthType":  "httpHeaderAuth",
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ $json.payload }}",
+                                         "options":  {
+                                                         "timeout":  60000
+                                                     }
+                                     },
+                      "id":  "7379b20f-d835-41bc-a43e-14bc45368ac9",
+                      "name":  "Call Backend",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.3,
+                      "position":  [
+                                       48,
+                                       112
+                                   ],
+                      "credentials":  {
+                                          "httpHeaderAuth":  {
+                                                                 "id":  "cKWPNT4KhWTMFaRm",
+                                                                 "name":  "Brand Backend Secret"
+                                                             }
+                                      },
+                      "onError":  "continueErrorOutput"
+                  },
+                  {
+                      "parameters":  {
+                                         "respondWith":  "json",
+                                         "responseBody":  "{\n  \"reply\": \"Not allowed\"\n}",
+                                         "options":  {
+                                                         "responseCode":  403
+                                                     }
+                                     },
+                      "id":  "5f39e21f-602e-48ed-bba4-44c00fb8884e",
+                      "name":  "Respond Not Allowed",
+                      "type":  "n8n-nodes-base.respondToWebhook",
+                      "typeVersion":  1.5,
+                      "position":  [
+                                       48,
+                                       384
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "respondWith":  "json",
+                                         "responseBody":  "={{ { reply: $json.reply, handoff: $json.handoff === true } }}",
+                                         "options":  {
+                                                         "responseCode":  200
+                                                     }
+                                     },
+                      "id":  "b5fb9457-f698-46e7-930f-51561be9607a",
+                      "name":  "Respond Success",
+                      "type":  "n8n-nodes-base.respondToWebhook",
+                      "typeVersion":  1.5,
+                      "position":  [
+                                       288,
+                                       64
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "respondWith":  "json",
+                                         "responseBody":  "{\n  \"reply\": \"Sorry, I\u0027m having trouble right now. Please try again.\"\n}",
+                                         "options":  {
+                                                         "responseCode":  502
+                                                     }
+                                     },
+                      "id":  "0cefabd6-dff3-4181-a435-ae3caa704744",
+                      "name":  "Respond Backend Error",
+                      "type":  "n8n-nodes-base.respondToWebhook",
+                      "typeVersion":  1.5,
+                      "position":  [
+                                       288,
+                                       272
+                                   ]
+                  }
+              ],
+    "pinData":  {
+
+                },
+    "connections":  {
+                        "Widget Chat":  {
+                                            "main":  [
+                                                         [
+                                                             {
+                                                                 "node":  "Resolve Site",
+                                                                 "type":  "main",
+                                                                 "index":  0
+                                                             }
+                                                         ]
+                                                     ]
+                                        },
+                        "Resolve Site":  {
+                                             "main":  [
+                                                          [
+                                                              {
+                                                                  "node":  "Allowed?",
+                                                                  "type":  "main",
+                                                                  "index":  0
+                                                              }
+                                                          ]
+                                                      ]
+                                         },
+                        "Allowed?":  {
+                                         "main":  [
+                                                      [
+                                                          {
+                                                              "node":  "Call Backend",
+                                                              "type":  "main",
+                                                              "index":  0
+                                                          }
+                                                      ],
+                                                      [
+                                                          {
+                                                              "node":  "Respond Not Allowed",
+                                                              "type":  "main",
+                                                              "index":  0
+                                                          }
+                                                      ]
+                                                  ]
+                                     },
+                        "Call Backend":  {
+                                             "main":  [
+                                                          [
+                                                              {
+                                                                  "node":  "Respond Success",
+                                                                  "type":  "main",
+                                                                  "index":  0
+                                                              }
+                                                          ],
+                                                          [
+                                                              {
+                                                                  "node":  "Respond Backend Error",
+                                                                  "type":  "main",
+                                                                  "index":  0
+                                                              }
+                                                          ]
+                                                      ]
+                                         }
+                    },
+    "active":  false,
+    "settings":  {
+                     "executionOrder":  "v1",
+                     "binaryMode":  "separate",
+                     "availableInMCP":  false
+                 },
+    "meta":  {
+                 "instanceId":  "79ec7986b87c97e178e5a8d4b00e6acb1548017b13fd9be46071619a2da8ca6b"
+             },
+    "nodeGroups":  [
+
+                   ],
+    "tags":  [
+
+             ]
+}

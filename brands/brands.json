@@ -1,0 +1,9 @@
+﻿{
+    "site_id":  "test-brand.com",
+    "brand_name":  "Test Brand",
+    "backend_url":  "https://test-backend.example.com/api/widget/chat",
+    "origins":  [],
+    "platform":  "web",
+    "status":  "pending",
+    "added_date":  "2026-10-07"
+}

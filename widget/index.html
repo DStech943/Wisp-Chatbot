@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Widget Local Test</title>
+    <script>
+      const WISP_SITE_ID = "mysa-lifestyle.myshopify.com";
+      const WISP_PLATFORM = "custom";
+      const WISP_API_URL = "https://supabasedb.datastraw.in/functions/v1/widget-chat";
+    </script>
+    <style>
+      body {
+        min-height: 100vh;
+        margin: 0;
+        font-family: Arial, sans-serif;
+        color: #172033;
+        background: #f4f1ea;
+      }
+
+      main {
+        max-width: 760px;
+        padding: 48px 24px;
+      }
+
+      h1 {
+        margin: 0 0 12px;
+        font-size: 32px;
+        line-height: 1.2;
+      }
+
+      p {
+        margin: 0;
+        font-size: 16px;
+        line-height: 1.6;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Widget Local Test</h1>
+      <p>This page loads the shared chat widget with the Supabase Edge Function URL.</p>
+    </main>
+
+    <script>
+      const widgetScript = document.createElement("script");
+      widgetScript.src = "./widget.js";
+      widgetScript.dataset.siteId = WISP_SITE_ID;
+      widgetScript.dataset.platform = WISP_PLATFORM;
+      widgetScript.dataset.api = WISP_API_URL;
+      document.body.appendChild(widgetScript);
+    </script>
+  </body>
+</html>
