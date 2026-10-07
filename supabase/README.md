@@ -108,6 +108,7 @@ Set these Edge Function secrets:
 ```powershell
 supabase secrets set SUPABASE_URL="https://supabasedb.datastraw.in"
 supabase secrets set SUPABASE_SERVICE_ROLE_KEY="YOUR_SERVICE_ROLE_KEY"
+supabase secrets set SUPABASE_DB_URL="YOUR_SUPABASE_DATABASE_CONNECTION_URL"
 ```
 
 Store these values in Supabase Vault:
