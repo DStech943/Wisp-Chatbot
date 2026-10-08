@@ -12,12 +12,8 @@ Brand website or Shopify storefront
         v
 Supabase Edge Function
   validates Origin + site_id against fp3.brands
-  forwards validated requests server-side
-        |
-        v
-n8n Production webhook
-  handles workflow + backend call
-  uses credentials stored in n8n
+  calls the brand backend server-side
+  stores successful conversations in fp3.conversations
         |
         | POST /api/widget/chat
         v
@@ -49,7 +45,7 @@ The widget sends:
 }
 ```
 
-The widget sends only `Content-Type: application/json`. Secrets must live in Supabase Edge Function secrets and n8n credentials, never in this repo.
+The widget sends only `Content-Type: application/json`. Secrets must live in Supabase Vault or Edge Function secrets, never in this repo.
 
 ## Non-Shopify Install Shape
 

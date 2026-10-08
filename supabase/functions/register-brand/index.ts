@@ -6,6 +6,7 @@ type RegisterBrandPayload = {
   brand_name?: unknown;
   website_url?: unknown;
   backend_url?: unknown;
+  backend_secret_name?: unknown;
   allowed_origins?: unknown;
   platform?: unknown;
 };
@@ -87,6 +88,7 @@ function normalizePayload(body: RegisterBrandPayload): {
   brand_name: string;
   website_url: string;
   backend_url: string;
+  backend_secret_name: string;
   allowed_origins: string[];
   platform: "web";
 } {
@@ -94,6 +96,9 @@ function normalizePayload(body: RegisterBrandPayload): {
   const brandName = stringField(body.brand_name, "brand_name");
   const websiteUrl = normalizeUrl(stringField(body.website_url, "website_url"), "website_url");
   const backendUrl = normalizeUrl(stringField(body.backend_url, "backend_url"), "backend_url");
+  const backendSecretName = body.backend_secret_name === undefined
+    ? "BRAND_BACKEND_SECRET"
+    : stringField(body.backend_secret_name, "backend_secret_name");
   const platform = body.platform === "web" || body.platform === undefined ? "web" : null;
 
   if (!platform) {
@@ -114,6 +119,7 @@ function normalizePayload(body: RegisterBrandPayload): {
     brand_name: brandName,
     website_url: websiteUrl,
     backend_url: backendUrl,
+    backend_secret_name: backendSecretName,
     allowed_origins: origins,
     platform,
   };
@@ -169,6 +175,7 @@ async function upsertBrand(brand: {
   brand_name: string;
   website_url: string;
   backend_url: string;
+  backend_secret_name: string;
   allowed_origins: string[];
   platform: "web";
 }): Promise<void> {
@@ -181,6 +188,7 @@ async function upsertBrand(brand: {
         brand_name,
         website_url,
         backend_url,
+        backend_secret_name,
         allowed_origins,
         platform,
         status
@@ -189,6 +197,7 @@ async function upsertBrand(brand: {
         ${brand.brand_name},
         ${brand.website_url},
         ${brand.backend_url},
+        ${brand.backend_secret_name},
         ${brand.allowed_origins},
         ${brand.platform},
         'active'
@@ -197,6 +206,7 @@ async function upsertBrand(brand: {
         brand_name = excluded.brand_name,
         website_url = excluded.website_url,
         backend_url = excluded.backend_url,
+        backend_secret_name = excluded.backend_secret_name,
         allowed_origins = excluded.allowed_origins,
         platform = excluded.platform,
         status = 'active'

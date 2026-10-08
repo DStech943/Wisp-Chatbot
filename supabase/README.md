@@ -1,67 +1,79 @@
 # Supabase Widget Gateway
 
-This folder contains the Supabase Edge Function that sits between browser widgets and n8n:
+This folder contains the Supabase database migrations and Edge Functions for the widget runtime:
 
 ```text
-widget.js -> Supabase Edge Function -> n8n webhook -> brand backend
+widget.js -> widget-chat Edge Function -> brand backend
+dashboard -> get-conversations Edge Function -> fp3.conversations
 ```
 
-The function handles browser CORS, validates the request origin against the brand registry table, then forwards the validated payload to n8n server-side.
+Supabase is the source of truth for brand registration, CORS, backend routing, and conversation history.
 
-## 1. Create The Table
+## 1. Create The Tables
 
-Run this SQL in Supabase SQL Editor:
+Run the SQL migrations in order from `supabase/migrations`:
 
-```sql
-create extension if not exists pgcrypto;
-
-create table if not exists fp3.brands (
-  brand_id uuid primary key default gen_random_uuid(),
-  site_id text not null unique,
-  brand_name text not null,
-  website_url text,
-  backend_url text not null,
-  allowed_origins text[] not null default '{}',
-  platform text not null default 'web',
-  status text not null default 'pending',
-  added_date date not null default current_date,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint brands_status_check check (status in ('pending', 'active', 'paused')),
-  constraint brands_platform_check check (platform in ('web', 'shopify'))
-);
-
-create index if not exists brands_status_idx on fp3.brands (status);
-create index if not exists brands_allowed_origins_idx on fp3.brands using gin (allowed_origins);
-
-create or replace function fp3.set_updated_at()
-returns trigger
-language plpgsql
-as $$
-begin
-  new.updated_at = now();
-  return new;
-end;
-$$;
-
-drop trigger if exists brands_set_updated_at on fp3.brands;
-
-create trigger brands_set_updated_at
-before update on fp3.brands
-for each row
-execute function fp3.set_updated_at();
-
-alter table fp3.brands enable row level security;
-
-revoke all on table fp3.brands from anon;
-revoke all on table fp3.brands from authenticated;
+```text
+001_create_brands.sql
+002_create_conversations.sql
 ```
 
-The Edge Function uses the database connection URL to read this table directly, so browser users never read this table directly.
+The important tables are:
 
-## 2. Add A Brand
+- `fp3.brands`: one row per brand/site, including allowed origins and backend URL.
+- `fp3.conversations`: one row per successful chat message/reply.
 
-Example insert:
+Both tables have RLS enabled and are revoked from `anon` and `authenticated`. The Edge Functions use the database connection URL directly.
+
+## 2. Brand Secrets
+
+The brand backend secret must live in Supabase Vault or as an Edge Function secret. Do not store it in this repo.
+
+Default secret name:
+
+```text
+BRAND_BACKEND_SECRET
+```
+
+`widget-chat` reads `backend_secret_name` from `fp3.brands`, loads that secret from Vault, and sends it to the brand backend as:
+
+```text
+X-Gateway-Secret: <secret value>
+```
+
+For the current backend, create this Vault secret:
+
+```text
+BRAND_BACKEND_SECRET=your_backend_gateway_secret
+```
+
+For a future brand with a different backend secret, store another Vault secret, then set that brand row's `backend_secret_name` to the new secret name.
+
+## 3. Configure Function Secrets And Vault
+
+Set this Edge Function secret:
+
+```powershell
+supabase secrets set SUPABASE_DB_URL="YOUR_SUPABASE_DATABASE_CONNECTION_URL"
+```
+
+Store these values in Supabase Vault:
+
+```text
+BRAND_BACKEND_SECRET=YOUR_BRAND_BACKEND_GATEWAY_SECRET
+WISP_ADMIN_KEY=YOUR_PRIVATE_SNIPPET_ADMIN_KEY
+WISP_DASHBOARD_KEY=YOUR_PRIVATE_DASHBOARD_KEY
+```
+
+`WISP_ADMIN_KEY` protects `register-brand`.
+
+`WISP_DASHBOARD_KEY` protects `get-conversations` and is the key you enter on the dashboard page.
+
+## 4. Add A Brand
+
+The docs site can create or update brand rows through `register-brand`.
+
+Manual SQL example:
 
 ```sql
 insert into fp3.brands (
@@ -69,6 +81,7 @@ insert into fp3.brands (
   brand_name,
   website_url,
   backend_url,
+  backend_secret_name,
   allowed_origins,
   platform,
   status
@@ -77,146 +90,36 @@ insert into fp3.brands (
   'Test Brand',
   'https://test-brand.com',
   'https://datastraw-support-agent-production-54f5.up.railway.app/api/widget/chat',
+  'BRAND_BACKEND_SECRET',
   array['https://test-brand.com', 'https://www.test-brand.com'],
   'web',
-  'pending'
+  'active'
 );
 ```
 
 Use origins exactly as browsers send them. `https://example.com` and `https://www.example.com` are different origins.
 
-To pause a brand:
-
-```sql
-update fp3.brands
-set status = 'paused'
-where site_id = 'test-brand.com';
-```
-
-To mark a brand active:
-
-```sql
-update fp3.brands
-set status = 'active'
-where site_id = 'test-brand.com';
-```
-
-## 3. Configure Function Secrets And Vault
-
-Set these Edge Function secrets:
-
-```powershell
-supabase secrets set SUPABASE_URL="https://supabasedb.datastraw.in"
-supabase secrets set SUPABASE_SERVICE_ROLE_KEY="YOUR_SERVICE_ROLE_KEY"
-supabase secrets set SUPABASE_DB_URL="YOUR_SUPABASE_DATABASE_CONNECTION_URL"
-```
-
-Store these values in Supabase Vault:
-
-```text
-N8N_WEBHOOK_URL=https://n8n.srv1327344.hstgr.cloud/webhook/widget-chat
-N8N_SHARED_SECRET=YOUR_SHARED_EDGE_TO_N8N_SECRET
-WISP_ADMIN_KEY=YOUR_PRIVATE_SNIPPET_ADMIN_KEY
-```
-
-`N8N_SHARED_SECRET` is sent to n8n as `X-Wisp-Edge-Secret`. In n8n, check the incoming `X-Wisp-Edge-Secret` header before calling any backend.
-
-`WISP_ADMIN_KEY` protects the snippet generator's brand registration endpoint. The docs site stores this key in `sessionStorage` only.
-
-## 4. Deploy
+## 5. Deploy
 
 From the repo root:
 
 ```powershell
 supabase functions deploy widget-chat --project-ref YOUR_PROJECT_REF
 supabase functions deploy register-brand --project-ref YOUR_PROJECT_REF
+supabase functions deploy get-conversations --project-ref YOUR_PROJECT_REF
 ```
 
-For your self-hosted Supabase, deploy using the method your Supabase instance supports. The function URL should be:
+For your self-hosted Supabase, deploy using the method your Supabase instance supports.
+
+Runtime URLs:
 
 ```text
 https://supabasedb.datastraw.in/functions/v1/widget-chat
-```
-
-The protected brand registration URL should be:
-
-```text
 https://supabasedb.datastraw.in/functions/v1/register-brand
+https://supabasedb.datastraw.in/functions/v1/get-conversations
 ```
 
-## Register Brands From The Docs Site
-
-The website install page can create or update rows in `fp3.brands`.
-
-It calls `register-brand` with:
-
-```text
-X-Admin-Key: WISP_ADMIN_KEY
-```
-
-The function upserts:
-
-- `site_id`
-- `brand_name`
-- `website_url`
-- `backend_url`
-- `allowed_origins`
-- `platform = web`
-- `status = active`
-
-The client-facing snippet is generated only after the row is written successfully.
-
-## 5. Update n8n
-
-The browser no longer calls n8n directly. Supabase calls n8n server-side, so the n8n workflow should trust only requests with the shared Edge secret.
-
-In your existing **Widget Chat** workflow, replace the old **Resolve Site** Code node logic with this shape:
-
-```js
-const expectedSecret = process.env.WISP_EDGE_SECRET || "";
-const headers = $json.headers || {};
-const body = $json.body || {};
-const providedSecret = headers["x-wisp-edge-secret"] || headers["X-Wisp-Edge-Secret"] || "";
-
-const ok = !!expectedSecret
-  && providedSecret === expectedSecret
-  && typeof body.backend_url === "string"
-  && body.backend_url.startsWith("https://")
-  && typeof body.message === "string"
-  && body.message.length > 0
-  && body.message.length <= 1000
-  && typeof body.session_id === "string"
-  && body.session_id.length <= 100;
-
-return {
-  json: {
-    ok,
-    backend: ok ? body.backend_url : null,
-    payload: ok
-      ? {
-          message: body.message,
-          session_id: body.session_id,
-          platform: body.platform || "web",
-          page_url: body.page_url || null,
-        }
-      : null,
-  },
-};
-```
-
-Then keep the existing IF node and HTTP Request node pattern:
-
-- IF checks `{{ $json.ok }}`.
-- HTTP Request URL stays `{{ $json.backend }}`.
-- HTTP Request JSON body stays `{{ $json.payload }}`.
-- The brand backend secret stays in the HTTP Request credential.
-
-Set the same secret in both places:
-
-- Supabase Vault secret: `N8N_SHARED_SECRET`
-- n8n environment variable: `WISP_EDGE_SECRET`
-
-## 6. Update Widget Installs
+## 6. Widget Install
 
 The widget `data-api` should point to the Edge Function:
 
@@ -230,7 +133,22 @@ The widget `data-api` should point to the Edge Function:
 ></script>
 ```
 
+## 7. Dashboard
+
+The dashboard calls:
+
+```text
+https://supabasedb.datastraw.in/functions/v1/get-conversations?site_id=SITE_ID
+```
+
+with:
+
+```text
+X-Dashboard-Key: WISP_DASHBOARD_KEY
+```
+
+The function returns the newest 200 rows from `fp3.conversations` for that `site_id`.
+
 ## CORS Note
 
-Browser preflight requests do not include the JSON body, so the function cannot know `site_id` during `OPTIONS`. It echoes the preflight origin so the browser can send the real `POST`, then validates `site_id` and `Origin` before forwarding anything to n8n.
-
+Browser preflight requests do not include the JSON body, so `widget-chat` cannot know `site_id` during `OPTIONS`. It echoes the preflight origin so the browser can send the real `POST`, then validates `site_id` and `Origin` before calling any brand backend.

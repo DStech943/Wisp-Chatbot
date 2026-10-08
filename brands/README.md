@@ -22,7 +22,7 @@ Add the same brand to the Supabase `fp3.brands` table. The runtime source of tru
 
 See [`../supabase/README.md`](../supabase/README.md) for the table SQL and insert examples.
 
-Secrets stay in Supabase Edge Function secrets and n8n credentials. Do not put secrets in this registry.
+Secrets stay in Supabase Vault or Edge Function secrets. Do not put secrets in this registry.
 
 ## 3. Generate The Client Snippet
 
@@ -45,7 +45,7 @@ After the client installs the snippet:
 - Open the client site
 - Confirm the chat bubble appears
 - Send a test message
-- Confirm Supabase accepts the origin and forwards to n8n
+- Confirm Supabase accepts the origin, calls the brand backend, and stores the conversation
 - Confirm the brand backend returns a reply
 
 ## 5. Mark Active

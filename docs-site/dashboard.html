@@ -23,7 +23,7 @@
       <section class="page-heading">
         <p class="eyebrow">Private dashboard</p>
         <h1>Customer conversations by brand.</h1>
-        <p>No conversation data is stored in this page. Rows load from n8n after you enter a dashboard key.</p>
+        <p>No conversation data is stored in this page. Rows load from Supabase after you enter a dashboard key.</p>
       </section>
 
       <section class="tool-panel dashboard-controls" aria-label="Dashboard controls">
@@ -41,7 +41,7 @@
 
     <script>
       (function () {
-        var conversationsUrl = "https://n8n.srv1327344.hstgr.cloud/webhook/conversations";
+        var conversationsUrl = "https://supabasedb.datastraw.in/functions/v1/get-conversations";
         var keyStorageName = "wisp_dashboard_key";
         var siteInput = document.getElementById("site-id");
         var loadButton = document.getElementById("load");

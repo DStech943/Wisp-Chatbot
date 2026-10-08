@@ -7,6 +7,7 @@ type Brand = {
   brand_name: string;
   website_url: string | null;
   backend_url: string;
+  backend_secret_name: string;
   allowed_origins: string[];
   platform: string;
   status: string;
@@ -19,11 +20,6 @@ type WidgetPayload = {
   platform?: unknown;
   page_url?: unknown;
 };
-
-const SUPABASE_URL = trimTrailingSlash(
-  Deno.env.get("SUPABASE_URL") || "https://supabasedb.datastraw.in",
-);
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
 const jsonHeaders = {
   "Content-Type": "application/json",
@@ -45,13 +41,6 @@ Deno.serve(async (request) => {
 
   if (!origin) {
     return jsonResponse({ reply: "Origin required" }, 403);
-  }
-
-  if (!SUPABASE_SERVICE_ROLE_KEY) {
-    return jsonResponse(
-      { reply: "Sorry, I'm having trouble right now. Please try again." },
-      500,
-    );
   }
 
   let body: WidgetPayload;
@@ -83,32 +72,36 @@ Deno.serve(async (request) => {
     return jsonResponse({ reply: validationError }, 400, origin);
   }
 
-  const n8nPayload = {
-    site_id: brand.site_id,
-    brand_id: brand.brand_id,
-    brand_name: brand.brand_name,
-    backend_url: brand.backend_url,
-    origin,
-    message: body.message,
-    session_id: body.session_id,
-    platform: body.platform || brand.platform || "web",
-    page_url: body.page_url || null,
+  const backendPayload = {
+    message: body.message as string,
+    session_id: body.session_id as string,
+    platform: (body.platform as string | undefined) || brand.platform || "web",
+    page_url: (body.page_url as string | null | undefined) || null,
   };
 
   try {
-    const n8nWebhookUrl = await getSecretFromVault("N8N_WEBHOOK_URL");
-    const n8nSharedSecret = await getSecretFromVault("N8N_SHARED_SECRET");
+    const gatewaySecret = await getSecretFromVault(brand.backend_secret_name);
+    const backendResponse = await forwardToBrandBackend(
+      brand.backend_url,
+      gatewaySecret,
+      backendPayload,
+    );
 
-    if (!n8nWebhookUrl) {
-      return jsonResponse(
-        { reply: "Sorry, I'm having trouble right now. Please try again." },
-        500,
+    if (backendResponse.status === 200) {
+      await storeConversation({
+        brand_id: brand.brand_id,
+        site_id: brand.site_id,
+        session_id: backendPayload.session_id,
+        message: backendPayload.message,
+        reply: backendResponse.body.reply,
+        handoff: backendResponse.body.handoff === true,
+        platform: backendPayload.platform,
+        page_url: backendPayload.page_url,
         origin,
-      );
+      });
     }
 
-    const n8nResponse = await forwardToN8n(n8nWebhookUrl, n8nSharedSecret, n8nPayload);
-    return jsonResponse(n8nResponse.body, n8nResponse.status, origin);
+    return jsonResponse(backendResponse.body, backendResponse.status, origin);
   } catch {
     return jsonResponse(
       { reply: "Sorry, I'm having trouble right now. Please try again." },
@@ -117,10 +110,6 @@ Deno.serve(async (request) => {
     );
   }
 });
-
-function trimTrailingSlash(value: string): string {
-  return value.replace(/\/+$/, "");
-}
 
 function getDbUrl(): string {
   const dbUrl = Deno.env.get("SUPABASE_DB_URL");
@@ -194,6 +183,7 @@ async function getBrand(siteId: string): Promise<Brand | null> {
         brand_name,
         website_url,
         backend_url,
+        backend_secret_name,
         allowed_origins,
         platform,
         status
@@ -215,52 +205,117 @@ async function getBrand(siteId: string): Promise<Brand | null> {
   }
 }
 
-async function forwardToN8n(
-  webhookUrl: string,
-  sharedSecret: string | null,
-  payload: Record<string, unknown>,
-): Promise<{ status: number; body: unknown }> {
+async function forwardToBrandBackend(
+  backendUrl: string,
+  gatewaySecret: string,
+  payload: {
+    message: string;
+    session_id: string;
+    platform: string;
+    page_url: string | null;
+  },
+): Promise<{ status: number; body: { reply: string; handoff?: boolean } }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60_000);
 
   try {
     const headers = new Headers({
       "Content-Type": "application/json",
+      "X-Gateway-Secret": gatewaySecret,
     });
 
-    if (sharedSecret) {
-      headers.set("X-Wisp-Edge-Secret", sharedSecret);
-    }
-
-    const response = await fetch(webhookUrl, {
+    const response = await fetch(backendUrl, {
       method: "POST",
       headers,
       body: JSON.stringify(payload),
       signal: controller.signal,
     });
 
-    let responseBody: unknown = {
+    let responseBody: { reply?: unknown; handoff?: unknown } = {
       reply: "Sorry, I'm having trouble right now. Please try again.",
     };
 
     try {
       responseBody = await response.json();
     } catch {
-      // Keep the generic body when n8n returns non-JSON.
+      // Keep the generic body when the backend returns non-JSON.
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      return {
+        status: 502,
+        body: { reply: "Sorry, I'm having trouble right now. Please try again." },
+      };
     }
 
     if (!response.ok) {
       return {
         status: 502,
-        body: responseBody,
+        body: normalizeBackendBody(responseBody),
       };
     }
 
     return {
       status: 200,
-      body: responseBody,
+      body: normalizeBackendBody(responseBody),
     };
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+function normalizeBackendBody(body: { reply?: unknown; handoff?: unknown }): {
+  reply: string;
+  handoff?: boolean;
+} {
+  return {
+    reply: typeof body.reply === "string"
+      ? body.reply
+      : "Sorry, I'm having trouble right now. Please try again.",
+    ...(body.handoff === true ? { handoff: true } : {}),
+  };
+}
+
+async function storeConversation(row: {
+  brand_id: string;
+  site_id: string;
+  session_id: string;
+  message: string;
+  reply: string;
+  handoff: boolean;
+  platform: string;
+  page_url: string | null;
+  origin: string;
+}): Promise<void> {
+  const sql = postgres(getDbUrl(), { max: 1 });
+
+  try {
+    await sql`
+      insert into fp3.conversations (
+        brand_id,
+        site_id,
+        session_id,
+        message,
+        reply,
+        handoff,
+        platform,
+        page_url,
+        origin
+      ) values (
+        ${row.brand_id},
+        ${row.site_id},
+        ${row.session_id},
+        ${row.message},
+        ${row.reply},
+        ${row.handoff},
+        ${row.platform},
+        ${row.page_url},
+        ${row.origin}
+      )
+    `;
+  } catch (error) {
+    console.error("Conversation insert failed", error);
+  } finally {
+    await sql.end();
   }
 }
