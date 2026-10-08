@@ -4,85 +4,9 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Wisp Chat Widget</title>
-    <link rel="stylesheet" href="style.css">
   </head>
   <body>
-    <header class="site-header">
-      <a class="brand" href="/" aria-label="Wisp home">
-        <img src="https://wisp-widget.pages.dev/Pixie.png" alt="" class="brand-mark">
-        <span>Wisp</span>
-      </a>
-      <nav class="nav" aria-label="Main navigation">
-        <a href="/install-shopify">Shopify</a>
-        <a href="/install-website">Website</a>
-        <a href="/dashboard">Dashboard</a>
-      </nav>
-    </header>
-
-    <main>
-      <section class="hero">
-        <div class="hero-copy">
-          <p class="eyebrow">Chat widget install hub</p>
-          <h1>Install Wisp on Shopify or any website.</h1>
-          <p>
-            Use these guides to add the floating chat widget, route it through
-            Supabase, and check live customer conversations from the
-            private dashboard.
-          </p>
-          <div class="hero-actions">
-            <a class="button primary" href="/install-shopify">Shopify guide</a>
-            <a class="button secondary" href="/install-website">Website guide</a>
-          </div>
-        </div>
-        <div class="preview-panel" aria-label="Widget preview">
-          <div class="preview-top">
-            <span>Chat with us</span>
-            <span class="preview-dot"></span>
-          </div>
-          <div class="preview-body">
-            <p class="preview-message">Hi. How can I help?</p>
-            <p class="preview-message reply">Where do I paste the script?</p>
-            <p class="preview-message">Right before the closing body tag.</p>
-          </div>
-        </div>
-      </section>
-
-      <section class="section">
-        <div class="section-heading">
-          <p class="eyebrow">Choose a path</p>
-          <h2>Two install flows, one widget.</h2>
-        </div>
-        <div class="grid two">
-          <article class="card">
-            <h3>Shopify brands</h3>
-            <p>
-              Send the client a custom-distribution app install link. They install
-              the app, enable the theme app embed, and save.
-            </p>
-            <a href="/install-shopify">Open Shopify steps</a>
-          </article>
-          <article class="card">
-            <h3>Non-Shopify websites</h3>
-            <p>
-              Generate a small script tag using the client site id, then ask the
-              client to paste it before the closing body tag.
-            </p>
-            <a href="/install-website">Generate snippet</a>
-          </article>
-        </div>
-      </section>
-
-      <section class="section muted">
-        <div class="section-heading">
-          <p class="eyebrow">Private view</p>
-          <h2>Conversation dashboard</h2>
-        </div>
-        <p class="measure">
-          The dashboard reads conversation rows from Supabase at runtime. It
-          stores the dashboard key in session storage only.
-        </p>
-        <a class="button secondary" href="/dashboard">Open dashboard</a>
-      </section>
-    </main>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

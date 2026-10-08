@@ -1,24 +1,10 @@
 {
+  "buildCommand": "npm run build",
+  "outputDirectory": "docs-site/dist",
   "rewrites": [
     {
-      "source": "/",
-      "destination": "/docs-site/index.html"
-    },
-    {
-      "source": "/install-shopify",
-      "destination": "/docs-site/install-shopify.html"
-    },
-    {
-      "source": "/install-website",
-      "destination": "/docs-site/install-website.html"
-    },
-    {
-      "source": "/dashboard",
-      "destination": "/docs-site/dashboard.html"
-    },
-    {
-      "source": "/:path*",
-      "destination": "/docs-site/:path*"
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
