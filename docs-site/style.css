@@ -347,7 +347,8 @@ h3 {
   font-weight: 800;
 }
 
-.field input {
+.field input,
+.field textarea {
   width: 100%;
   min-height: 44px;
   padding: 10px 12px;
@@ -356,9 +357,11 @@ h3 {
   background: #ffffff;
   color: var(--ink);
   font: inherit;
+  resize: vertical;
 }
 
-.field input:focus {
+.field input:focus,
+.field textarea:focus {
   outline: 3px solid rgba(36, 118, 255, 0.18);
   border-color: var(--accent);
 }

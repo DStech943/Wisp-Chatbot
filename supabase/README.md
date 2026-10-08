@@ -116,9 +116,12 @@ Store these values in Supabase Vault:
 ```text
 N8N_WEBHOOK_URL=https://n8n.srv1327344.hstgr.cloud/webhook/widget-chat
 N8N_SHARED_SECRET=YOUR_SHARED_EDGE_TO_N8N_SECRET
+WISP_ADMIN_KEY=YOUR_PRIVATE_SNIPPET_ADMIN_KEY
 ```
 
 `N8N_SHARED_SECRET` is sent to n8n as `X-Wisp-Edge-Secret`. In n8n, check the incoming `X-Wisp-Edge-Secret` header before calling any backend.
+
+`WISP_ADMIN_KEY` protects the snippet generator's brand registration endpoint. The docs site stores this key in `sessionStorage` only.
 
 ## 4. Deploy
 
@@ -126,6 +129,7 @@ From the repo root:
 
 ```powershell
 supabase functions deploy widget-chat --project-ref YOUR_PROJECT_REF
+supabase functions deploy register-brand --project-ref YOUR_PROJECT_REF
 ```
 
 For your self-hosted Supabase, deploy using the method your Supabase instance supports. The function URL should be:
@@ -133,6 +137,34 @@ For your self-hosted Supabase, deploy using the method your Supabase instance su
 ```text
 https://supabasedb.datastraw.in/functions/v1/widget-chat
 ```
+
+The protected brand registration URL should be:
+
+```text
+https://supabasedb.datastraw.in/functions/v1/register-brand
+```
+
+## Register Brands From The Docs Site
+
+The website install page can create or update rows in `fp3.brands`.
+
+It calls `register-brand` with:
+
+```text
+X-Admin-Key: WISP_ADMIN_KEY
+```
+
+The function upserts:
+
+- `site_id`
+- `brand_name`
+- `website_url`
+- `backend_url`
+- `allowed_origins`
+- `platform = web`
+- `status = active`
+
+The client-facing snippet is generated only after the row is written successfully.
 
 ## 5. Update n8n
 
