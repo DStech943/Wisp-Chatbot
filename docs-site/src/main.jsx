@@ -6,8 +6,64 @@ const WIDGET_HOST_URL = "https://wisp-widget.pages.dev/widget.js";
 const WIDGET_API_URL = "https://supabasedb.datastraw.in/functions/v1/widget-chat";
 const REGISTER_BRAND_URL = "https://supabasedb.datastraw.in/functions/v1/register-brand";
 const CONVERSATIONS_URL = "https://supabasedb.datastraw.in/functions/v1/get-conversations";
+const GET_BRAND_SETTINGS_URL = "https://supabasedb.datastraw.in/functions/v1/get-brand-settings";
+const UPDATE_BRAND_SETTINGS_URL = "https://supabasedb.datastraw.in/functions/v1/update-brand-settings";
 const ADMIN_KEY_STORAGE = "wisp_snippet_admin_key";
 const DASHBOARD_KEY_STORAGE = "wisp_dashboard_key";
+const DASHBOARD_SITE_STORAGE = "wisp_dashboard_site_id";
+
+const DASHBOARD_TABS = [
+  { id: "chats", label: "Chats" },
+  { id: "customize", label: "Customize" },
+  { id: "nudges", label: "Nudges" },
+];
+
+const DEFAULT_NUDGE_SETTINGS = {
+  enabled: true,
+  preorder: false,
+  preorder_selector: "",
+  preorder_keywords: ["pre-order", "preorder", "pre order"],
+  results_selector: "[data-wisp-results], [id*='review'], [class*='review'], [id*='results'], [class*='results']",
+  out_of_stock: {
+    enabled: true,
+    message: "Out of stock? We can remind you once it's back.",
+    chips: ["Remind me"],
+  },
+  preorder_nudge: {
+    enabled: true,
+    message: "This product is on pre-order, so delivery might take a little longer.",
+    chips: ["When will it arrive?"],
+  },
+  variant_flipping: {
+    enabled: true,
+    message: "Not sure which one fits? I can help you pick.",
+    chips: ["Help me choose", "What's the difference?"],
+  },
+  results_anxiety: {
+    enabled: true,
+    message: "Want to know what to expect and when?",
+    chips: ["Results & timelines", "Is it right for me?"],
+  },
+  hesitation: {
+    enabled: true,
+    message: "Questions about ingredients, size or usage?",
+    chips: ["Ingredients", "Size", "Usage"],
+  },
+  repeat_views: {
+    enabled: true,
+    message: "Still thinking about this one? Here's what people ask most.",
+    chips: ["What do people ask most?", "Is this right for me?", "How do I use it?"],
+  },
+};
+
+const NUDGE_DEFINITIONS = [
+  { id: "out_of_stock", title: "Out of stock", trigger: "Selected variant cannot be bought. 3s after load, re-checked on variant change." },
+  { id: "preorder_nudge", title: "Pre-order", trigger: "Product is pre-order. 3s after load." },
+  { id: "variant_flipping", title: "Variant flipping", trigger: "3+ variant changes within 120s on one page view." },
+  { id: "results_anxiety", title: "Results anxiety", trigger: "Reviews or results section is at least 50% visible for 3s." },
+  { id: "hesitation", title: "Hesitation", trigger: "30s of visible-tab time on a product page, no add-to-cart." },
+  { id: "repeat_views", title: "Repeat views", trigger: "3rd view of the same product in a session. 5s after load." },
+];
 
 const PREVIEW_EVENTS = [
   { type: "message", side: "bot", text: "Hi. How can I help?", at: 0 },
@@ -459,59 +515,63 @@ function WebsiteInstall() {
 }
 
 function Dashboard() {
-  const [siteId, setSiteId] = useState("");
+  const [siteId, setSiteId] = useState(() => sessionStorage.getItem(DASHBOARD_SITE_STORAGE) || "");
+  const [activeTab, setActiveTab] = useState("chats");
+  const [dashboardKeyInput, setDashboardKeyInput] = useState(() => sessionStorage.getItem(DASHBOARD_KEY_STORAGE) || "");
+  const [isLoggedIn, setIsLoggedIn] = useState(() => Boolean(sessionStorage.getItem(DASHBOARD_KEY_STORAGE) && sessionStorage.getItem(DASHBOARD_SITE_STORAGE)));
   const [status, setStatus] = useState("");
+  const [settingsStatus, setSettingsStatus] = useState("");
   const [rows, setRows] = useState([]);
   const [hasLoaded, setHasLoaded] = useState(false);
-  const [keyModalOpen, setKeyModalOpen] = useState(false);
-  const [dashboardKeyInput, setDashboardKeyInput] = useState("");
-  const [dashboardKeyError, setDashboardKeyError] = useState("");
-  const [pendingKeyResolver, setPendingKeyResolver] = useState(null);
+  const [nudgeSettings, setNudgeSettings] = useState(DEFAULT_NUDGE_SETTINGS);
+  const [uiSettings, setUiSettings] = useState({
+    botName: "Maya",
+    welcomeMessage: "Hi this is Maya🤍, how can I help you?",
+    launcherStyle: "Glassy",
+    accentColor: "#172033",
+  });
+  const [busy, setBusy] = useState(false);
 
-  useModalBodyLock(keyModalOpen);
+  const groups = useMemo(() => groupRows(rows), [rows]);
 
-  useEffect(() => {
-    getDashboardKey(false);
-  }, []);
-
-  const getDashboardKey = (forcePrompt) => {
-    const stored = sessionStorage.getItem(DASHBOARD_KEY_STORAGE);
-    if (stored && !forcePrompt) {
-      return Promise.resolve(stored);
-    }
-    setDashboardKeyInput("");
-    setDashboardKeyError("");
-    setKeyModalOpen(true);
-    return new Promise((resolve) => setPendingKeyResolver(() => resolve));
-  };
-
-  const closeDashboardKeyModal = (value = "") => {
-    setKeyModalOpen(false);
-    if (pendingKeyResolver) {
-      pendingKeyResolver(value);
-      setPendingKeyResolver(null);
-    }
-  };
-
-  const submitDashboardKey = () => {
-    const value = dashboardKeyInput.trim();
-    if (!value) {
-      setDashboardKeyError("Enter the dashboard key to continue.");
-      return;
-    }
-    sessionStorage.setItem(DASHBOARD_KEY_STORAGE, value);
-    closeDashboardKeyModal(value);
-  };
-
-  const loadConversations = async () => {
-    const key = await getDashboardKey(false);
+  const login = () => {
+    const key = dashboardKeyInput.trim();
     const cleanedSiteId = siteId.trim();
+
     if (!key) {
       setStatus("Enter a dashboard key.");
       return;
     }
     if (!cleanedSiteId) {
       setStatus("Enter a site id.");
+      return;
+    }
+
+    sessionStorage.setItem(DASHBOARD_KEY_STORAGE, key);
+    sessionStorage.setItem(DASHBOARD_SITE_STORAGE, cleanedSiteId);
+    setActiveTab("chats");
+    setIsLoggedIn(true);
+    window.scrollTo({ top: 0, behavior: "auto" });
+    loadConversations(key, cleanedSiteId);
+    loadSettings(key, cleanedSiteId);
+  };
+
+  const logout = () => {
+    sessionStorage.removeItem(DASHBOARD_KEY_STORAGE);
+    sessionStorage.removeItem(DASHBOARD_SITE_STORAGE);
+    setDashboardKeyInput("");
+    setSiteId("");
+    setIsLoggedIn(false);
+    setRows([]);
+    setHasLoaded(false);
+    setStatus("");
+    setSettingsStatus("");
+  };
+
+  const loadConversations = (key = sessionStorage.getItem(DASHBOARD_KEY_STORAGE), rawSiteId = siteId) => {
+    const cleanedSiteId = rawSiteId.trim();
+    if (!key || !cleanedSiteId) {
+      setStatus("Enter a site id and dashboard key.");
       return;
     }
 
@@ -527,6 +587,7 @@ function Dashboard() {
     }).then((response) => {
       if (response.status === 401) {
         sessionStorage.removeItem(DASHBOARD_KEY_STORAGE);
+        sessionStorage.removeItem(DASHBOARD_SITE_STORAGE);
         throw new Error("Invalid key");
       }
       if (!response.ok) {
@@ -538,72 +599,364 @@ function Dashboard() {
       setRows(normalizeRows(data));
       setHasLoaded(true);
     }).catch((error) => {
+      if (error.message === "Invalid key") {
+        setIsLoggedIn(false);
+      }
       setRows([]);
       setHasLoaded(false);
       setStatus(error.message === "Invalid key" ? "Invalid key" : "Could not load conversations.");
     });
   };
 
-  const groups = useMemo(() => groupRows(rows), [rows]);
+  const loadSettings = (key = sessionStorage.getItem(DASHBOARD_KEY_STORAGE), rawSiteId = siteId) => {
+    const cleanedSiteId = rawSiteId.trim();
+    if (!key || !cleanedSiteId) {
+      setSettingsStatus("Enter a site id and dashboard key.");
+      return;
+    }
 
-  return (
-    <>
-      <main className="dashboard-shell">
+    setSettingsStatus("Loading settings...");
+    fetch(`${GET_BRAND_SETTINGS_URL}?site_id=${encodeURIComponent(cleanedSiteId)}`, {
+      method: "GET",
+      headers: {
+        "X-Dashboard-Key": key,
+      },
+    }).then((response) => {
+      if (response.status === 401) {
+        sessionStorage.removeItem(DASHBOARD_KEY_STORAGE);
+        sessionStorage.removeItem(DASHBOARD_SITE_STORAGE);
+        throw new Error("Invalid key");
+      }
+      if (!response.ok) {
+        throw new Error("Could not load settings");
+      }
+      return response.json();
+    }).then((data) => {
+      setNudgeSettings(normalizeNudgeSettings(data.settings?.nudge_settings));
+      setUiSettings({ ...uiSettings, ...(data.settings?.ui_settings || {}) });
+      setSettingsStatus("Settings loaded.");
+    }).catch((error) => {
+      if (error.message === "Invalid key") {
+        setIsLoggedIn(false);
+      }
+      setSettingsStatus(error.message === "Invalid key" ? "Invalid key" : "Could not load settings.");
+    });
+  };
+
+  const saveSettings = () => {
+    const key = sessionStorage.getItem(DASHBOARD_KEY_STORAGE);
+    const cleanedSiteId = siteId.trim();
+    if (!key || !cleanedSiteId) {
+      setSettingsStatus("Enter a site id and dashboard key.");
+      return;
+    }
+
+    setBusy(true);
+    setSettingsStatus("Saving settings...");
+    fetch(UPDATE_BRAND_SETTINGS_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Dashboard-Key": key,
+      },
+      body: JSON.stringify({
+        site_id: cleanedSiteId,
+        nudge_settings: nudgeSettings,
+        ui_settings: uiSettings,
+      }),
+    }).then((response) => response.json().catch(() => ({})).then((data) => {
+      if (response.status === 401) {
+        sessionStorage.removeItem(DASHBOARD_KEY_STORAGE);
+        throw new Error("Invalid key");
+      }
+      if (!response.ok || data.ok === false) {
+        throw new Error(data.error || "Could not save settings");
+      }
+    })).then(() => {
+      setSettingsStatus("Settings saved.");
+    }).catch((error) => {
+      setSettingsStatus(error.message || "Could not save settings.");
+    }).finally(() => {
+      setBusy(false);
+    });
+  };
+
+  const activeDashboardTab = DASHBOARD_TABS.find((tab) => tab.id === activeTab) || DASHBOARD_TABS[0];
+  const dashboardIntro = {
+    chats: "Review customer conversations and handoff requests for this brand.",
+    customize: "Draft the chatbot look and greeting for this store.",
+    nudges: "Control proactive messages, chips, and trigger-specific copy.",
+  }[activeDashboardTab.id];
+
+  if (!isLoggedIn) {
+    return (
+      <main className="dashboard-shell dashboard-auth-shell">
         <section className="page-heading">
           <p className="eyebrow">Private dashboard</p>
-          <h1>Customer conversations by brand.</h1>
-          <p>No conversation data is stored in this page. Rows load from Supabase after you enter a dashboard key.</p>
+          <h1>Log in to open the brand workspace.</h1>
+          <p>Use one protected dashboard key and a site ID to manage conversations, UI, and nudges.</p>
         </section>
 
-        <Reveal as="section" className="tool-panel dashboard-controls" aria-label="Dashboard controls">
+        <Reveal as="section" className="tool-panel dashboard-login" aria-label="Dashboard login">
+          <label className="field">
+            <span>Dashboard key</span>
+            <input type="password" autoComplete="current-password" value={dashboardKeyInput} onChange={(event) => setDashboardKeyInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && login()} />
+          </label>
           <label className="field">
             <span>Site ID</span>
-            <input id="site-id" type="text" placeholder="client-domain.com" autoComplete="off" value={siteId} onChange={(event) => setSiteId(event.target.value)} onKeyDown={(event) => event.key === "Enter" && loadConversations()} />
+            <input id="site-id" type="text" placeholder="client-domain.com" autoComplete="off" value={siteId} onChange={(event) => setSiteId(event.target.value)} onKeyDown={(event) => event.key === "Enter" && login()} />
           </label>
-          <button className="button primary" id="load" type="button" onClick={loadConversations}>Load conversations</button>
-          <button className="button secondary" id="change-key" type="button" onClick={() => {
-            sessionStorage.removeItem(DASHBOARD_KEY_STORAGE);
-            getDashboardKey(true);
-          }}>Change key</button>
-          <p className="status-text" id="status" role="status" aria-live="polite">{status}</p>
-        </Reveal>
-
-        <Reveal as="section" id="sessions" className="sessions" aria-live="polite">
-          {hasLoaded && rows.length === 0 ? <p className="empty-state">No conversations found for this site id.</p> : null}
-          {groups.map((group) => (
-            <article className="session-card" key={group.sessionId}>
-              <div className="session-heading">
-                <h2>{group.sessionId}</h2>
-                <span>{group.messages.length} message{group.messages.length === 1 ? "" : "s"}</span>
-              </div>
-              {group.messages.map((row, index) => (
-                <div className="conversation-row" key={row.id || `${group.sessionId}-${index}`}>
-                  <p className="conversation-time">{formatTimestamp(row.timestamp || row.created_at)}</p>
-                  <p className="conversation-message">{row.message || ""}</p>
-                  <p className="conversation-reply">{row.reply || ""}</p>
-                  {row.handoff === true || row.handoff === "true" ? <span className="badge">Handoff</span> : null}
-                </div>
-              ))}
-            </article>
-          ))}
+          <button className="button primary" type="button" onClick={login}>Log in</button>
+          <p className="status-text" role="status" aria-live="polite">{status}</p>
         </Reveal>
       </main>
+    );
+  }
 
-      <KeyModal
-        open={keyModalOpen}
-        idPrefix="dashboard-key"
-        eyebrow="Private dashboard"
-        title="Enter dashboard key"
-        copy="This key protects customer conversation history."
-        label="Dashboard key"
-        value={dashboardKeyInput}
-        error={dashboardKeyError}
-        onChange={setDashboardKeyInput}
-        onSubmit={submitDashboardKey}
-        onCancel={() => closeDashboardKeyModal("")}
-      />
-    </>
+  return (
+    <main className="dashboard-app">
+      <aside className="dashboard-sidebar" aria-label="Dashboard navigation">
+        <div className="dashboard-sidebar-brand">
+          <p className="eyebrow">Wisp dashboard</p>
+          <h1>{siteId.trim() || "Brand workspace"}</h1>
+          <p>Manage the chatbot experience for this storefront.</p>
+        </div>
+
+        <nav className="dashboard-sidebar-nav" aria-label="Dashboard sections">
+          {DASHBOARD_TABS.map((tab) => (
+            <button
+              type="button"
+              key={tab.id}
+              className={activeTab === tab.id ? "is-active" : ""}
+              aria-pressed={activeTab === tab.id}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="dashboard-sidebar-footer">
+          <p className="sidebar-meta">
+            Site ID
+            <strong>{siteId.trim()}</strong>
+          </p>
+          <button className="button secondary" type="button" onClick={() => {
+            loadConversations();
+            loadSettings();
+          }}>Reload brand</button>
+          <button className="button secondary" type="button" onClick={logout}>Log out</button>
+        </div>
+      </aside>
+
+      <section className="dashboard-main">
+        <div className="dashboard-content-heading">
+          <div>
+            <p className="eyebrow">{activeDashboardTab.label}</p>
+            <h2>{activeDashboardTab.label}</h2>
+            <p>{dashboardIntro}</p>
+          </div>
+          {activeTab === "chats" ? (
+            <button className="button primary" id="load" type="button" onClick={() => loadConversations()}>Load conversations</button>
+          ) : null}
+        </div>
+
+        {activeTab === "chats" ? (
+          <>
+            <p className="status-text" id="status" role="status" aria-live="polite">{status}</p>
+            <Reveal as="section" id="sessions" className="sessions" aria-live="polite">
+              {hasLoaded && rows.length === 0 ? <p className="empty-state">No conversations found for this site id.</p> : null}
+              {groups.map((group) => (
+                <article className="session-card" key={group.sessionId}>
+                  <div className="session-heading">
+                    <h2>{group.sessionId}</h2>
+                    <span>{group.messages.length} message{group.messages.length === 1 ? "" : "s"}</span>
+                  </div>
+                  {group.messages.map((row, index) => (
+                    <div className="conversation-row" key={row.id || `${group.sessionId}-${index}`}>
+                      <p className="conversation-time">{formatTimestamp(row.timestamp || row.created_at)}</p>
+                      <p className="conversation-message">{row.message || ""}</p>
+                      <p className="conversation-reply">{row.reply || ""}</p>
+                      {row.handoff === true || row.handoff === "true" ? <span className="badge">Handoff</span> : null}
+                    </div>
+                  ))}
+                </article>
+              ))}
+            </Reveal>
+          </>
+        ) : null}
+
+        {activeTab === "customize" ? (
+          <CustomizePanel
+            uiSettings={uiSettings}
+            setUiSettings={setUiSettings}
+            saveSettings={saveSettings}
+            busy={busy}
+            status={settingsStatus}
+          />
+        ) : null}
+
+        {activeTab === "nudges" ? (
+          <NudgesPanel
+            nudgeSettings={nudgeSettings}
+            setNudgeSettings={setNudgeSettings}
+            saveSettings={saveSettings}
+            busy={busy}
+            status={settingsStatus}
+            reload={() => loadSettings()}
+          />
+        ) : null}
+      </section>
+    </main>
   );
+}
+
+function CustomizePanel({ uiSettings, setUiSettings, saveSettings, busy, status }) {
+  const update = (key, value) => {
+    setUiSettings((current) => ({ ...current, [key]: value }));
+  };
+
+  return (
+    <Reveal as="section" className="settings-grid" aria-label="Customize chatbot UI">
+      <div className="tool-panel settings-panel">
+        <div>
+          <p className="eyebrow">Customize</p>
+          <h2>Chatbot UI</h2>
+          <p className="muted-copy">This is the UI surface for future theme controls. Saving stores the draft in Supabase.</p>
+        </div>
+        <label className="field">
+          <span>Bot name</span>
+          <input value={uiSettings.botName || ""} onChange={(event) => update("botName", event.target.value)} />
+        </label>
+        <label className="field">
+          <span>Welcome message</span>
+          <textarea rows="3" value={uiSettings.welcomeMessage || ""} onChange={(event) => update("welcomeMessage", event.target.value)} />
+        </label>
+        <label className="field">
+          <span>Launcher style</span>
+          <select value={uiSettings.launcherStyle || "Glassy"} onChange={(event) => update("launcherStyle", event.target.value)}>
+            <option>Glassy</option>
+            <option>Minimal</option>
+            <option>Solid</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>Accent color</span>
+          <input type="color" value={uiSettings.accentColor || "#172033"} onChange={(event) => update("accentColor", event.target.value)} />
+        </label>
+        <div className="settings-actions">
+          <button className="button primary" type="button" disabled={busy} onClick={saveSettings}>{busy ? "Saving..." : "Save UI draft"}</button>
+          <p className="status-text" role="status" aria-live="polite">{status}</p>
+        </div>
+      </div>
+      <div className="customize-preview">
+        <div className="mock-widget">
+          <div className="mock-header">{uiSettings.botName || "Maya"}</div>
+          <div className="mock-body">
+            <p>{uiSettings.welcomeMessage || "Hi this is Maya🤍, how can I help you?"}</p>
+            <span>Track my order</span>
+            <span>Best Sellers</span>
+          </div>
+          <div className="mock-input">Ask me anything</div>
+        </div>
+      </div>
+    </Reveal>
+  );
+}
+
+function NudgesPanel({ nudgeSettings, setNudgeSettings, saveSettings, busy, status, reload }) {
+  const setGlobal = (key, value) => {
+    setNudgeSettings((current) => ({ ...current, [key]: value }));
+  };
+
+  const setNudge = (id, key, value) => {
+    setNudgeSettings((current) => ({
+      ...current,
+      [id]: {
+        ...current[id],
+        [key]: value,
+      },
+    }));
+  };
+
+  return (
+    <Reveal as="section" className="tool-panel settings-panel" aria-label="Nudge settings">
+      <div className="settings-heading">
+        <div>
+          <p className="eyebrow">Nudges</p>
+          <h2>Behavior triggers</h2>
+          <p className="muted-copy">Toggle each nudge and edit the message customers see. Chip labels are pipe-separated.</p>
+        </div>
+        <label className="switch-row">
+          <input type="checkbox" checked={nudgeSettings.enabled !== false} onChange={(event) => setGlobal("enabled", event.target.checked)} />
+          <span>Enable all nudges</span>
+        </label>
+      </div>
+
+      <div className="nudge-config-row">
+        <label className="field">
+          <span>Pre-order selector</span>
+          <input value={nudgeSettings.preorder_selector || ""} onChange={(event) => setGlobal("preorder_selector", event.target.value)} placeholder="[data-preorder]" />
+        </label>
+        <label className="field">
+          <span>Results/reviews selector</span>
+          <input value={nudgeSettings.results_selector || ""} onChange={(event) => setGlobal("results_selector", event.target.value)} />
+        </label>
+      </div>
+
+      <div className="nudge-list">
+        {NUDGE_DEFINITIONS.map((definition) => {
+          const value = nudgeSettings[definition.id] || {};
+          return (
+            <article className="nudge-card" key={definition.id}>
+              <div className="nudge-card-top">
+                <div>
+                  <h3>{definition.title}</h3>
+                  <p>{definition.trigger}</p>
+                </div>
+                <label className="switch-row">
+                  <input type="checkbox" checked={value.enabled !== false} onChange={(event) => setNudge(definition.id, "enabled", event.target.checked)} />
+                  <span>{value.enabled === false ? "Off" : "On"}</span>
+                </label>
+              </div>
+              <label className="field">
+                <span>Message</span>
+                <textarea rows="2" value={value.message || ""} onChange={(event) => setNudge(definition.id, "message", event.target.value)} />
+              </label>
+              <label className="field">
+                <span>Chips</span>
+                <input value={(value.chips || []).join(" | ")} onChange={(event) => setNudge(definition.id, "chips", splitChipInput(event.target.value))} />
+              </label>
+            </article>
+          );
+        })}
+      </div>
+
+      <div className="settings-actions">
+        <button className="button secondary" type="button" onClick={reload}>Reload settings</button>
+        <button className="button primary" type="button" disabled={busy} onClick={saveSettings}>{busy ? "Saving..." : "Save nudges"}</button>
+        <p className="status-text" role="status" aria-live="polite">{status}</p>
+      </div>
+    </Reveal>
+  );
+}
+
+function splitChipInput(value) {
+  return value.split(value.indexOf("|") === -1 ? "," : "|").map((item) => item.trim()).filter(Boolean);
+}
+
+function normalizeNudgeSettings(value) {
+  const source = value && typeof value === "object" ? value : {};
+  return {
+    ...DEFAULT_NUDGE_SETTINGS,
+    ...source,
+    out_of_stock: { ...DEFAULT_NUDGE_SETTINGS.out_of_stock, ...(source.out_of_stock || {}) },
+    preorder_nudge: { ...DEFAULT_NUDGE_SETTINGS.preorder_nudge, ...(source.preorder_nudge || source.preorder || {}) },
+    variant_flipping: { ...DEFAULT_NUDGE_SETTINGS.variant_flipping, ...(source.variant_flipping || {}) },
+    results_anxiety: { ...DEFAULT_NUDGE_SETTINGS.results_anxiety, ...(source.results_anxiety || {}) },
+    hesitation: { ...DEFAULT_NUDGE_SETTINGS.hesitation, ...(source.hesitation || {}) },
+    repeat_views: { ...DEFAULT_NUDGE_SETTINGS.repeat_views, ...(source.repeat_views || {}) },
+  };
 }
 
 function Step({ number, title, children }) {

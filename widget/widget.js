@@ -6,6 +6,7 @@
   var siteId = dataset.siteId || "";
   var platform = dataset.platform || "custom";
   var api = dataset.api || "";
+  var configApi = dataset.configApi || api.replace(/\/widget-chat\/?$/, "/widget-config");
   var pixieLogo = script && script.src ? new URL("Pixie.png", script.src).href : "Pixie.png";
   var pageContentLimit = 8000;
 
@@ -18,11 +19,14 @@
   var isOpen = false;
   var isSending = false;
   var isHandoff = false;
+  var placeholderTimer = null;
+  var placeholderText = "Ask me anything";
   var nudgeConfig = getNudgeConfig(dataset);
   var nudgeState = {
     fired: {},
     pending: [],
     flushTimer: null,
+    teaserTimer: null,
     cooldownUntil: 0,
     variantChangeTimes: [],
     lastVariantKey: getSelectedVariantKey(),
@@ -39,25 +43,33 @@ host.style.setProperty("display", "block", "important");
   var shadow = host.attachShadow({ mode: "open" });
   shadow.innerHTML = [
     "<style>",
-    ":host { all: initial; position: fixed; right: 20px; bottom: 20px; z-index: 2147483647; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; color: #172033; }",
+    "@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap');",
+    ":host { all: initial; position: fixed; right: 20px; bottom: 20px; z-index: 2147483647; font-family: Manrope, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; font-weight: 500; color: #172033; }",
     "* { box-sizing: border-box; }",
     ".wisp-root { position: relative; width: 64px; height: 64px; }",
-    ".wisp-bubble { width: 64px; height: 64px; border: 0; border-radius: 50%; background: #172033; color: #ffffff; box-shadow: 0 14px 34px rgba(23, 32, 51, 0.28); cursor: pointer; display: grid; place-items: center; transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease; }",
-    ".wisp-bubble:hover { transform: translateY(-1px); box-shadow: 0 18px 42px rgba(23, 32, 51, 0.34); }",
-    ".wisp-bubble:focus-visible, .wisp-send:focus-visible { outline: 3px solid rgba(23, 32, 51, 0.2); outline-offset: 3px; }",
+    ".wisp-bubble { width: 64px; height: 64px; border: 1px solid rgba(255, 255, 255, 0.62); border-radius: 50%; background: rgba(255, 255, 255, 0.72); color: #172033; box-shadow: 0 18px 44px rgba(23, 32, 51, 0.18); cursor: pointer; display: grid; place-items: center; backdrop-filter: blur(18px) saturate(150%); -webkit-backdrop-filter: blur(18px) saturate(150%); transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease; }",
+    ".wisp-bubble:hover { transform: translateY(-1px); background: rgba(255, 255, 255, 0.88); box-shadow: 0 22px 52px rgba(23, 32, 51, 0.22); }",
+    ".wisp-bubble:focus-visible, .wisp-send:focus-visible { outline: 3px solid rgba(68, 97, 140, 0.22); outline-offset: 3px; }",
     ".wisp-bubble svg { width: 29px; height: 29px; display: block; }",
-    ".wisp-panel { position: absolute; right: 0; bottom: 78px; width: 360px; height: 520px; max-height: calc(100vh - 112px); background: #ffffff; border: 1px solid rgba(23, 32, 51, 0.1); border-radius: 18px; box-shadow: 0 26px 70px rgba(23, 32, 51, 0.18); overflow: hidden; display: none; flex-direction: column; }",
-    ".wisp-root[data-open='true'] .wisp-panel { display: flex; }",
-    ".wisp-header { min-height: 56px; padding: 14px 16px; background: #172033; color: #ffffff; display: flex; align-items: center; justify-content: space-between; gap: 12px; }",
+    ".wisp-teaser { position: absolute; right: 46px; bottom: 50px; width: 218px; min-height: 54px; padding: 10px 34px 10px 12px; border: 1px solid rgba(23, 32, 51, 0.12); border-radius: 8px; background: #ffffff; color: #172033; box-shadow: 0 14px 34px rgba(23, 32, 51, 0.18); cursor: pointer; display: block; text-align: left; font: inherit; font-size: 12px; line-height: 16px; font-weight: 700; opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(8px) scale(0.96); transform-origin: right bottom; transition: opacity 180ms ease, transform 180ms ease, visibility 0ms linear 180ms; }",
+    ".wisp-teaser::before { content: ''; position: absolute; right: -8px; bottom: 14px; border-width: 8px 0 8px 9px; border-style: solid; border-color: transparent transparent transparent rgba(23, 32, 51, 0.12); }",
+    ".wisp-teaser::after { content: ''; position: absolute; right: -7px; bottom: 15px; border-width: 7px 0 7px 8px; border-style: solid; border-color: transparent transparent transparent #ffffff; }",
+    ".wisp-teaser-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }",
+    ".wisp-teaser-close { position: absolute; right: -7px; top: -7px; width: 18px; height: 18px; border-radius: 50%; border: 1px solid rgba(23, 32, 51, 0.12); background: #ffffff; color: #172033; display: grid; place-items: center; font-size: 12px; line-height: 1; box-shadow: 0 4px 12px rgba(23, 32, 51, 0.18); }",
+    ".wisp-root[data-teaser='true'] .wisp-teaser { opacity: 1; visibility: visible; pointer-events: auto; transform: translateY(0) scale(1); transition-delay: 0ms; }",
+    ".wisp-root[data-open='true'] .wisp-teaser { opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(8px) scale(0.96); transition-delay: 0ms, 0ms, 180ms; }",
+    ".wisp-panel { position: absolute; right: 0; bottom: 78px; width: 360px; height: 520px; max-height: calc(100vh - 112px); background: rgba(255, 255, 255, 0.66); border: 1px solid rgba(255, 255, 255, 0.58); border-radius: 18px; box-shadow: 0 30px 80px rgba(23, 32, 51, 0.20); overflow: hidden; display: flex; flex-direction: column; opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(14px) scale(0.96); transform-origin: right bottom; backdrop-filter: blur(24px) saturate(155%); -webkit-backdrop-filter: blur(24px) saturate(155%); transition: opacity 200ms ease, transform 200ms ease, visibility 0ms linear 200ms; }",
+    ".wisp-root[data-open='true'] .wisp-panel { opacity: 1; visibility: visible; pointer-events: auto; transform: translateY(0) scale(1); transition-delay: 0ms; }",
+    ".wisp-header { min-height: 56px; padding: 14px 16px; background: rgba(232, 226, 216, 0.46); color: #172033; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid rgba(23, 32, 51, 0.08); backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%); }",
     ".wisp-title { font-size: 15px; line-height: 20px; font-weight: 700; margin: 0; }",
-    ".wisp-close { width: 32px; height: 32px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.1); color: #ffffff; cursor: pointer; display: grid; place-items: center; }",
-    ".wisp-close:hover { background: rgba(255, 255, 255, 0.18); }",
+    ".wisp-close { width: 32px; height: 32px; border: 1px solid rgba(23, 32, 51, 0.08); border-radius: 50%; background: rgba(255, 255, 255, 0.48); color: #172033; cursor: pointer; display: grid; place-items: center; }",
+    ".wisp-close:hover { background: rgba(255, 255, 255, 0.72); }",
     ".wisp-close svg { width: 18px; height: 18px; display: block; }",
-    ".wisp-messages { flex: 1; min-height: 0; padding: 16px; overflow-y: auto; background: #ffffff; display: flex; flex-direction: column; gap: 10px; }",
-    ".wisp-message { max-width: 82%; padding: 10px 12px; border-radius: 8px; font-size: 14px; line-height: 20px; overflow-wrap: anywhere; white-space: pre-wrap; }",
-    ".wisp-message-user { align-self: flex-end; background: #172033; color: #ffffff; }",
-    ".wisp-message-assistant { align-self: flex-start; background: #ffffff; color: #172033; border: 1px solid rgba(23, 32, 51, 0.09); }",
-    ".wisp-message-error { align-self: flex-start; background: #f3f4f6; color: #172033; border: 1px solid rgba(23, 32, 51, 0.14); }",
+    ".wisp-messages { flex: 1; min-height: 0; padding: 16px; overflow-y: auto; background: linear-gradient(145deg, rgba(255, 255, 255, 0.28), rgba(247, 232, 218, 0.32)); display: flex; flex-direction: column; gap: 10px; }",
+    ".wisp-message { max-width: 82%; padding: 10px 12px; border-radius: 8px; font-size: 14px; line-height: 20px; overflow-wrap: anywhere; white-space: pre-wrap; opacity: 0; transform: translateY(8px) scale(0.98); animation: wispMessageIn 220ms cubic-bezier(0.16, 1, 0.3, 1) forwards; }",
+    ".wisp-message-user { align-self: flex-end; background: rgba(255, 255, 255, 0.86); color: #172033; border: 1px solid rgba(255, 255, 255, 0.62); box-shadow: 0 10px 26px rgba(23, 32, 51, 0.10); }",
+    ".wisp-message-assistant { align-self: flex-start; background: rgba(255, 255, 255, 0.70); color: #172033; border: 1px solid rgba(255, 255, 255, 0.58); box-shadow: 0 10px 28px rgba(23, 32, 51, 0.08); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }",
+    ".wisp-message-error { align-self: flex-start; background: rgba(255, 255, 255, 0.62); color: #172033; border: 1px solid rgba(23, 32, 51, 0.12); }",
     ".wisp-chip-row { margin-top: 9px; display: flex; flex-wrap: wrap; gap: 7px; }",
     ".wisp-chip { max-width: 100%; min-height: 30px; border: 1px solid rgba(23, 32, 51, 0.16); border-radius: 999px; padding: 6px 10px; background: #ffffff; color: #172033; cursor: pointer; font: inherit; font-size: 12px; line-height: 16px; font-weight: 700; overflow-wrap: anywhere; }",
     ".wisp-chip:hover { background: #f6f7f9; border-color: rgba(23, 32, 51, 0.28); }",
@@ -68,14 +80,17 @@ host.style.setProperty("display", "block", "important");
     ".wisp-dot:nth-child(2) { animation-delay: 120ms; }",
     ".wisp-dot:nth-child(3) { animation-delay: 240ms; }",
     "@keyframes wispPulse { 0%, 80%, 100% { opacity: 0.35; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }",
-    ".wisp-footer { padding: 10px 12px 8px; background: #ffffff; border-top: 1px solid rgba(23, 32, 51, 0.06); }",
-    ".wisp-form { height: 50px; padding: 4px 5px 4px 16px; background: #fbfbfc; border: 1px solid rgba(23, 32, 51, 0.16); border-radius: 18px; display: flex; align-items: center; gap: 8px; box-shadow: inset 0 1px 2px rgba(23, 32, 51, 0.03); }",
+    "@keyframes wispMessageIn { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }",
+    ".wisp-footer { padding: 10px 12px 8px; background: rgba(232, 226, 216, 0.44); border-top: 1px solid rgba(23, 32, 51, 0.08); backdrop-filter: blur(20px) saturate(140%); -webkit-backdrop-filter: blur(20px) saturate(140%); }",
+    ".wisp-suggestions { padding: 0 2px 8px; display: flex; flex-wrap: wrap; gap: 7px; transition: opacity 160ms ease, transform 160ms ease; }",
+    ".wisp-suggestions[data-hidden='true'] { display: none; }",
+    ".wisp-form { height: 50px; padding: 4px 5px 4px 16px; background: rgba(255, 255, 255, 0.54); border: 1px solid rgba(255, 255, 255, 0.66); border-radius: 18px; display: flex; align-items: center; gap: 8px; box-shadow: inset 0 1px 2px rgba(23, 32, 51, 0.04), 0 10px 28px rgba(23, 32, 51, 0.08); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }",
     ".wisp-input { min-width: 0; flex: 1; height: 40px; border: 0; border-radius: 14px; padding: 0; font: inherit; font-size: 16px; font-weight: 600; color: #172033; background: transparent; }",
     ".wisp-input:focus { outline: none; }",
     ".wisp-input::placeholder { color: #aeb4c2; font-weight: 600; }",
     ".wisp-input:disabled { color: #8b92a3; }",
-    ".wisp-send { width: 40px; height: 40px; flex: 0 0 40px; border: 0; border-radius: 50%; background: #172033; color: #ffffff; cursor: pointer; display: grid; place-items: center; }",
-    ".wisp-send:hover { background: #2c3447; }",
+    ".wisp-send { width: 40px; height: 40px; flex: 0 0 40px; border: 1px solid rgba(23, 32, 51, 0.08); border-radius: 50%; background: rgba(23, 32, 51, 0.88); color: #ffffff; cursor: pointer; display: grid; place-items: center; box-shadow: 0 8px 22px rgba(23, 32, 51, 0.18); }",
+    ".wisp-send:hover { background: rgba(42, 51, 70, 0.92); }",
     ".wisp-send:disabled { cursor: not-allowed; opacity: 0.6; }",
     ".wisp-send svg { width: 18px; height: 18px; display: block; }",
     ".wisp-powered { height: 18px; margin-top: 7px; display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 9px; line-height: 1; color: #6b7280; font-weight: 700; }",
@@ -85,6 +100,7 @@ host.style.setProperty("display", "block", "important");
     "  :host { right: 0; bottom: 0; }",
     "  .wisp-root { width: 100vw; height: 100vh; pointer-events: none; }",
     "  .wisp-bubble { position: absolute; right: 16px; bottom: 16px; pointer-events: auto; }",
+    "  .wisp-teaser { right: 62px; bottom: 46px; width: min(230px, calc(100vw - 96px)); pointer-events: auto; }",
     "  .wisp-panel { position: absolute; inset: 0; width: 100vw; height: 100vh; max-height: none; border-radius: 0; border: 0; pointer-events: auto; }",
     "  .wisp-root[data-open='true'] .wisp-bubble { display: none; }",
     "}",
@@ -98,14 +114,20 @@ host.style.setProperty("display", "block", "important");
     "      </button>",
     "    </header>",
     "    <div class=\"wisp-messages\" role=\"log\" aria-live=\"polite\" aria-relevant=\"additions\">",
-    "      <div class=\"wisp-message wisp-message-assistant\">Hi. How can I help?</div>",
+    "      <div class=\"wisp-message wisp-message-assistant\">Hi this is Maya🤍, how can I help you?</div>",
     "      <div class=\"wisp-typing\" aria-label=\"Assistant is typing\">",
     "        <span class=\"wisp-dot\"></span><span class=\"wisp-dot\"></span><span class=\"wisp-dot\"></span>",
     "      </div>",
     "    </div>",
     "    <div class=\"wisp-footer\">",
+    "      <div class=\"wisp-suggestions\" data-wisp-suggestions data-hidden=\"false\">",
+    "        <button class=\"wisp-chip\" type=\"button\" data-wisp-suggestion=\"Track my order\">Track my order</button>",
+    "        <button class=\"wisp-chip\" type=\"button\" data-wisp-suggestion=\"Chat with our Team\">Chat with our Team</button>",
+    "        <button class=\"wisp-chip\" type=\"button\" data-wisp-suggestion=\"Best Sellers\">Best Sellers</button>",
+    "        <button class=\"wisp-chip\" type=\"button\" data-wisp-suggestion=\"Ongoing Discounts?\">Ongoing Discounts?</button>",
+    "      </div>",
     "      <form class=\"wisp-form\">",
-    "        <input class=\"wisp-input\" type=\"text\" autocomplete=\"off\" placeholder=\"Ask me anything\" aria-label=\"Message\" />",
+    "        <input class=\"wisp-input\" type=\"text\" autocomplete=\"off\" placeholder=\"\" aria-label=\"Message\" />",
     "        <button class=\"wisp-send\" type=\"submit\" aria-label=\"Send message\">",
     "          <svg viewBox=\"0 0 24 24\" aria-hidden=\"true\" fill=\"none\"><path d=\"M12 19V5m0 0-6 6m6-6 6 6\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>",
     "        </button>",
@@ -116,21 +138,35 @@ host.style.setProperty("display", "block", "important");
     "  <button class=\"wisp-bubble\" type=\"button\" aria-label=\"Open chat\" aria-expanded=\"false\">",
     "    <svg viewBox=\"0 0 24 24\" aria-hidden=\"true\" fill=\"none\"><path d=\"M7.5 17.5 4 20V6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8.5a2.5 2.5 0 0 1-2.5 2.5h-10Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>",
     "  </button>",
+    "  <button class=\"wisp-teaser\" type=\"button\" aria-label=\"Open chat message\">",
+    "    <span class=\"wisp-teaser-text\"></span>",
+    "    <span class=\"wisp-teaser-close\" aria-hidden=\"true\">x</span>",
+    "  </button>",
     "</div>"
   ].join("");
 
   var root = shadow.querySelector(".wisp-root");
   var panel = shadow.querySelector(".wisp-panel");
   var bubble = shadow.querySelector(".wisp-bubble");
+  var teaser = shadow.querySelector(".wisp-teaser");
+  var teaserText = shadow.querySelector(".wisp-teaser-text");
   var closeButton = shadow.querySelector(".wisp-close");
   var messages = shadow.querySelector(".wisp-messages");
   var typing = shadow.querySelector(".wisp-typing");
   var form = shadow.querySelector(".wisp-form");
   var input = shadow.querySelector(".wisp-input");
   var sendButton = shadow.querySelector(".wisp-send");
+  var suggestions = shadow.querySelector("[data-wisp-suggestions]");
+  var suggestionButtons = Array.prototype.slice.call(shadow.querySelectorAll("[data-wisp-suggestion]"));
 
   bubble.addEventListener("click", function () {
     setOpen(!isOpen);
+  });
+
+  teaser.addEventListener("click", function (event) {
+    event.preventDefault();
+    hideTeaser();
+    setOpen(true);
   });
 
   closeButton.addEventListener("click", function () {
@@ -149,7 +185,16 @@ host.style.setProperty("display", "block", "important");
     }
   });
 
-  startNudgeEngine();
+  suggestionButtons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      sendUserMessage(button.getAttribute("data-wisp-suggestion") || button.textContent);
+    });
+  });
+
+  loadWidgetConfig().finally(function () {
+    startNudgeEngine();
+    startWelcomeTeaser();
+  });
 
   function setOpen(nextOpen) {
     isOpen = nextOpen;
@@ -159,9 +204,13 @@ host.style.setProperty("display", "block", "important");
     bubble.setAttribute("aria-label", isOpen ? "Close chat" : "Open chat");
 
     if (isOpen) {
+      hideTeaser();
+      animatePlaceholder();
       window.setTimeout(function () {
         input.focus();
       }, 0);
+    } else {
+      stopPlaceholderAnimation();
     }
   }
 
@@ -180,6 +229,7 @@ host.style.setProperty("display", "block", "important");
       return false;
     }
 
+    hideSuggestions();
     appendMessage(message, "user");
     setSending(true);
 
@@ -321,6 +371,25 @@ host.style.setProperty("display", "block", "important");
     startHesitationTimer();
   }
 
+  function startWelcomeTeaser() {
+    var key = "wisp_welcome_seen:" + siteId;
+
+    try {
+      if (window.sessionStorage.getItem(key)) {
+        return;
+      }
+
+      window.sessionStorage.setItem(key, "true");
+    } catch (error) {
+      return;
+    }
+
+    window.setTimeout(function () {
+      showTeaser("Hi this is Maya🤍, how can I help you?");
+      nudgeState.cooldownUntil = Math.max(nudgeState.cooldownUntil, Date.now() + 8000);
+    }, 900);
+  }
+
   function handleVariantChange() {
     window.setTimeout(function () {
       var variantKey = getSelectedVariantKey();
@@ -390,7 +459,7 @@ host.style.setProperty("display", "block", "important");
 
       nudgeState.visibleProductSeconds += 1;
 
-      if (nudgeState.visibleProductSeconds >= 45) {
+      if (nudgeState.visibleProductSeconds >= 30) {
         queueNudge("hesitation");
       }
     }, 1000);
@@ -399,7 +468,7 @@ host.style.setProperty("display", "block", "important");
   function queueNudge(id) {
     var definition = nudgeConfig.nudges[id];
 
-    if (!definition || nudgeState.fired[id]) {
+    if (!definition || definition.enabled === false || nudgeState.fired[id]) {
       return;
     }
 
@@ -434,12 +503,36 @@ host.style.setProperty("display", "block", "important");
     });
 
     var next = nudgeState.pending.shift();
-    setOpen(true);
     appendNudge(next.message, next.chips, next.id);
+    showTeaser(next.message);
     nudgeState.cooldownUntil = Date.now() + 20000;
 
     if (nudgeState.pending.length > 0) {
       nudgeState.flushTimer = window.setTimeout(flushNudges, 20000);
+    }
+  }
+
+  function showTeaser(text) {
+    if (isOpen || !teaserText) {
+      return;
+    }
+
+    teaserText.textContent = text;
+    root.setAttribute("data-teaser", "true");
+
+    if (nudgeState.teaserTimer) {
+      window.clearTimeout(nudgeState.teaserTimer);
+    }
+
+    nudgeState.teaserTimer = window.setTimeout(hideTeaser, 12000);
+  }
+
+  function hideTeaser() {
+    root.setAttribute("data-teaser", "false");
+
+    if (nudgeState.teaserTimer) {
+      window.clearTimeout(nudgeState.teaserTimer);
+      nudgeState.teaserTimer = null;
     }
   }
 
@@ -503,8 +596,32 @@ host.style.setProperty("display", "block", "important");
       return false;
     }
 
-    return /\/products?\//i.test(window.location.pathname) ||
-      !!queryOneSafe("[data-product], [itemtype*='Product'], form[action*='/cart/add']");
+    var pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+
+    if (/^\/($|home$|index$|search(\/|$)|cart(\/|$)|blogs?(\/|$)|pages?(\/|$)|account(\/|$))/i.test(pathname)) {
+      return false;
+    }
+
+    if (/\/products?\//i.test(pathname)) {
+      return true;
+    }
+
+    if (/^\/collections?(\/|$)/i.test(pathname)) {
+      return false;
+    }
+
+    var ogType = queryOneSafe("meta[property='og:type'], meta[name='og:type']");
+    if (ogType && /product/i.test(ogType.getAttribute("content") || "")) {
+      return true;
+    }
+
+    var bodyClass = document.body && document.body.className ? String(document.body.className) : "";
+    if (/\b(template-product|product-template|product-page)\b/i.test(bodyClass)) {
+      return true;
+    }
+
+    var canonical = queryOneSafe("link[rel='canonical']");
+    return !!(canonical && canonical.href && /\/products?\//i.test(canonical.href));
   }
 
   function getProductKey() {
@@ -584,37 +701,120 @@ host.style.setProperty("display", "block", "important");
       resultsSelector: source.resultsSelector || "[data-wisp-results], [id*='review'], [class*='review'], [id*='results'], [class*='results']",
       nudges: {
         out_of_stock: {
+          enabled: true,
           priority: 1,
           message: "Out of stock? We can remind you once it's back.",
           chips: ["Remind me"]
         },
         preorder: {
+          enabled: true,
           priority: 2,
           message: "This product is on pre-order, so delivery might take a little longer.",
           chips: ["When will it arrive?"]
         },
         variant_flipping: {
+          enabled: true,
           priority: 3,
           message: "Not sure which one fits? I can help you pick.",
           chips: ["Help me choose", "What's the difference?"]
         },
         results_anxiety: {
+          enabled: true,
           priority: 4,
           message: "Want to know what to expect and when?",
           chips: ["Results & timelines", "Is it right for me?"]
         },
         hesitation: {
+          enabled: true,
           priority: 5,
           message: "Questions about ingredients, size or usage?",
           chips: faqChips
         },
         repeat_views: {
+          enabled: true,
           priority: 6,
           message: "Still thinking about this one? Here's what people ask most.",
           chips: topQuestionChips
         }
       }
     };
+  }
+
+  function loadWidgetConfig() {
+    if (!configApi || configApi === api) {
+      return Promise.resolve();
+    }
+
+    return fetch(configApi + "?site_id=" + encodeURIComponent(siteId), {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json"
+      }
+    })
+      .then(function (response) {
+        if (!response.ok) {
+          return null;
+        }
+
+        return response.json();
+      })
+      .then(function (data) {
+        if (!data || data.ok === false || !data.settings) {
+          return;
+        }
+
+        applyRemoteNudgeConfig(data.settings.nudge_settings || {});
+      })
+      .catch(function () {
+        // Keep local data-* config when the remote config endpoint is unavailable.
+      });
+  }
+
+  function applyRemoteNudgeConfig(settings) {
+    if (!settings || typeof settings !== "object") {
+      return;
+    }
+
+    if (typeof settings.enabled === "boolean") {
+      nudgeConfig.enabled = settings.enabled;
+    }
+
+    if (typeof settings.preorder === "boolean") {
+      nudgeConfig.preorder = settings.preorder;
+    }
+
+    if (typeof settings.preorder_selector === "string") {
+      nudgeConfig.preorderSelector = settings.preorder_selector;
+    }
+
+    if (Array.isArray(settings.preorder_keywords)) {
+      nudgeConfig.preorderKeywords = settings.preorder_keywords.map(normalizeText).filter(Boolean);
+    }
+
+    if (typeof settings.results_selector === "string") {
+      nudgeConfig.resultsSelector = settings.results_selector;
+    }
+
+    Object.keys(nudgeConfig.nudges).forEach(function (id) {
+      var remote = id === "preorder" ? settings.preorder_nudge : settings[id];
+      var local = nudgeConfig.nudges[id];
+
+      if (!remote || typeof remote !== "object") {
+        return;
+      }
+
+      if (typeof remote.enabled === "boolean") {
+        local.enabled = remote.enabled;
+      }
+
+      if (typeof remote.message === "string" && remote.message.trim()) {
+        local.message = remote.message.trim();
+      }
+
+      if (Array.isArray(remote.chips)) {
+        local.chips = remote.chips.map(normalizeText).filter(Boolean);
+      }
+    });
   }
 
   function parseList(value, fallback) {
@@ -683,7 +883,41 @@ host.style.setProperty("display", "block", "important");
     isHandoff = true;
     input.value = "";
     input.placeholder = "A team member will take it from here";
+    stopPlaceholderAnimation();
     setSending(false);
+  }
+
+  function hideSuggestions() {
+    if (suggestions) {
+      suggestions.setAttribute("data-hidden", "true");
+    }
+  }
+
+  function animatePlaceholder() {
+    if (isHandoff) {
+      return;
+    }
+
+    stopPlaceholderAnimation();
+    input.placeholder = "";
+
+    var index = 0;
+    placeholderTimer = window.setInterval(function () {
+      index += 1;
+      input.placeholder = placeholderText.slice(0, index);
+
+      if (index >= placeholderText.length) {
+        stopPlaceholderAnimation();
+        input.placeholder = placeholderText;
+      }
+    }, 34);
+  }
+
+  function stopPlaceholderAnimation() {
+    if (placeholderTimer) {
+      window.clearInterval(placeholderTimer);
+      placeholderTimer = null;
+    }
   }
 
   function parseJson(text) {
