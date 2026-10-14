@@ -19,6 +19,8 @@ type WidgetPayload = {
   session_id?: unknown;
   platform?: unknown;
   page_url?: unknown;
+  page_title?: unknown;
+  page_content?: unknown;
 };
 
 const jsonHeaders = {
@@ -77,6 +79,8 @@ Deno.serve(async (request) => {
     session_id: body.session_id as string,
     platform: (body.platform as string | undefined) || brand.platform || "web",
     page_url: (body.page_url as string | null | undefined) || null,
+    page_title: (body.page_title as string | null | undefined) || null,
+    page_content: (body.page_content as string | null | undefined) || null,
   };
 
   try {
@@ -169,6 +173,22 @@ function validateWidgetPayload(body: WidgetPayload): string | null {
     return "Invalid page_url";
   }
 
+  if (
+    body.page_title !== undefined &&
+    body.page_title !== null &&
+    (typeof body.page_title !== "string" || body.page_title.length > 300)
+  ) {
+    return "Invalid page_title";
+  }
+
+  if (
+    body.page_content !== undefined &&
+    body.page_content !== null &&
+    (typeof body.page_content !== "string" || body.page_content.length > 12000)
+  ) {
+    return "Invalid page_content";
+  }
+
   return null;
 }
 
@@ -213,6 +233,8 @@ async function forwardToBrandBackend(
     session_id: string;
     platform: string;
     page_url: string | null;
+    page_title: string | null;
+    page_content: string | null;
   },
 ): Promise<{ status: number; body: { reply: string; handoff?: boolean } }> {
   const controller = new AbortController();

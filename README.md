@@ -41,7 +41,9 @@ The widget sends:
   "message": "Customer message",
   "session_id": "browser-session-id",
   "platform": "custom",
-  "page_url": "https://brand.example/products/example"
+  "page_url": "https://brand.example/products/example",
+  "page_title": "Example Product",
+  "page_content": "Cleaned visible page text capped at 8000 characters"
 }
 ```
 
@@ -58,3 +60,19 @@ The widget sends only `Content-Type: application/json`. Secrets must live in Sup
   defer
 ></script>
 ```
+
+## Nudge Configuration
+
+Nudges are enabled by default. They can be customized with optional script attributes:
+
+```html
+data-nudges="true"
+data-preorder="false"
+data-preorder-selector="[data-preorder]"
+data-preorder-keywords="pre-order|ships later"
+data-faq-chips="Ingredients|Size|Usage"
+data-top-questions="What do people ask most?|Is this right for me?|How do I use it?"
+data-results-selector="[data-wisp-results], .reviews"
+```
+
+The widget fires the highest-priority pending nudge first and spaces nudges by 20 seconds.

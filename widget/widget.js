@@ -7,6 +7,7 @@
   var platform = dataset.platform || "custom";
   var api = dataset.api || "";
   var pixieLogo = script && script.src ? new URL("Pixie.png", script.src).href : "Pixie.png";
+  var pageContentLimit = 8000;
 
   if (!siteId || !api) {
     return;
@@ -17,6 +18,18 @@
   var isOpen = false;
   var isSending = false;
   var isHandoff = false;
+  var nudgeConfig = getNudgeConfig(dataset);
+  var nudgeState = {
+    fired: {},
+    pending: [],
+    flushTimer: null,
+    cooldownUntil: 0,
+    variantChangeTimes: [],
+    lastVariantKey: getSelectedVariantKey(),
+    addToCartClicked: false,
+    visibleProductSeconds: 0,
+    resultsTimer: null
+  };
 
   var host = document.createElement("div");
 host.setAttribute("data-wisp-chat-host", siteId);
@@ -45,6 +58,10 @@ host.style.setProperty("display", "block", "important");
     ".wisp-message-user { align-self: flex-end; background: #172033; color: #ffffff; }",
     ".wisp-message-assistant { align-self: flex-start; background: #ffffff; color: #172033; border: 1px solid rgba(23, 32, 51, 0.09); }",
     ".wisp-message-error { align-self: flex-start; background: #f3f4f6; color: #172033; border: 1px solid rgba(23, 32, 51, 0.14); }",
+    ".wisp-chip-row { margin-top: 9px; display: flex; flex-wrap: wrap; gap: 7px; }",
+    ".wisp-chip { max-width: 100%; min-height: 30px; border: 1px solid rgba(23, 32, 51, 0.16); border-radius: 999px; padding: 6px 10px; background: #ffffff; color: #172033; cursor: pointer; font: inherit; font-size: 12px; line-height: 16px; font-weight: 700; overflow-wrap: anywhere; }",
+    ".wisp-chip:hover { background: #f6f7f9; border-color: rgba(23, 32, 51, 0.28); }",
+    ".wisp-chip:focus-visible { outline: 3px solid rgba(23, 32, 51, 0.16); outline-offset: 2px; }",
     ".wisp-typing { align-self: flex-start; display: none; align-items: center; gap: 4px; height: 34px; padding: 0 12px; background: #ffffff; border: 1px solid rgba(23, 32, 51, 0.09); border-radius: 8px; }",
     ".wisp-root[data-typing='true'] .wisp-typing { display: flex; }",
     ".wisp-dot { width: 6px; height: 6px; border-radius: 50%; background: #7a8496; animation: wispPulse 1s infinite ease-in-out; }",
@@ -132,6 +149,8 @@ host.style.setProperty("display", "block", "important");
     }
   });
 
+  startNudgeEngine();
+
   function setOpen(nextOpen) {
     isOpen = nextOpen;
     root.setAttribute("data-open", String(isOpen));
@@ -149,13 +168,22 @@ host.style.setProperty("display", "block", "important");
   function sendMessage() {
     var message = input.value.trim();
 
+    if (sendUserMessage(message)) {
+      input.value = "";
+    }
+  }
+
+  function sendUserMessage(message) {
+    message = normalizeText(message);
+
     if (!message || isSending || isHandoff) {
-      return;
+      return false;
     }
 
-    input.value = "";
     appendMessage(message, "user");
     setSending(true);
+
+    var pageContext = getPageContext();
 
     fetch(api, {
       method: "POST",
@@ -167,7 +195,9 @@ host.style.setProperty("display", "block", "important");
         message: message,
         session_id: sessionId,
         platform: platform,
-        page_url: window.location.href
+        page_url: window.location.href,
+        page_title: pageContext.title,
+        page_content: pageContext.content
       })
     })
       .then(function (response) {
@@ -203,6 +233,8 @@ host.style.setProperty("display", "block", "important");
       .finally(function () {
         setSending(false);
       });
+
+    return true;
   }
 
   function appendMessage(text, type) {
@@ -211,6 +243,432 @@ host.style.setProperty("display", "block", "important");
     message.textContent = text;
     messages.insertBefore(message, typing);
     messages.scrollTop = messages.scrollHeight;
+  }
+
+  function appendNudge(text, chips, id) {
+    var message = document.createElement("div");
+    message.className = "wisp-message wisp-message-assistant";
+    message.setAttribute("data-wisp-nudge-id", id);
+
+    var copy = document.createElement("div");
+    copy.textContent = text;
+    message.appendChild(copy);
+
+    if (chips && chips.length > 0) {
+      var chipRow = document.createElement("div");
+      chipRow.className = "wisp-chip-row";
+
+      chips.forEach(function (chip) {
+        var chipButton = document.createElement("button");
+        chipButton.className = "wisp-chip";
+        chipButton.type = "button";
+        chipButton.textContent = chip;
+        chipButton.addEventListener("click", function () {
+          setOpen(true);
+          sendUserMessage(chip);
+        });
+        chipRow.appendChild(chipButton);
+      });
+
+      message.appendChild(chipRow);
+    }
+
+    messages.insertBefore(message, typing);
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  function startNudgeEngine() {
+    if (!nudgeConfig.enabled) {
+      return;
+    }
+
+    var isRepeatProductView = isThirdProductView();
+
+    window.setTimeout(function () {
+      if (isSelectedVariantUnavailable()) {
+        queueNudge("out_of_stock");
+      }
+
+      if (isPreorderProduct()) {
+        queueNudge("preorder");
+      }
+    }, 3000);
+
+    window.setTimeout(function () {
+      if (isRepeatProductView) {
+        queueNudge("repeat_views");
+      }
+    }, 5000);
+
+    document.addEventListener("change", function (event) {
+      if (isVariantControl(event.target)) {
+        handleVariantChange();
+      }
+    }, true);
+
+    document.addEventListener("click", function (event) {
+      if (isAddToCartControl(event.target)) {
+        nudgeState.addToCartClicked = true;
+        return;
+      }
+
+      if (isVariantControl(event.target)) {
+        handleVariantChange();
+      }
+    }, true);
+
+    startResultsObserver();
+    startHesitationTimer();
+  }
+
+  function handleVariantChange() {
+    window.setTimeout(function () {
+      var variantKey = getSelectedVariantKey();
+
+      if (variantKey && variantKey !== nudgeState.lastVariantKey) {
+        nudgeState.lastVariantKey = variantKey;
+        recordVariantFlip();
+      }
+
+      if (isSelectedVariantUnavailable()) {
+        queueNudge("out_of_stock");
+      }
+    }, 250);
+  }
+
+  function recordVariantFlip() {
+    var now = Date.now();
+    nudgeState.variantChangeTimes = nudgeState.variantChangeTimes.filter(function (time) {
+      return now - time <= 120000;
+    });
+    nudgeState.variantChangeTimes.push(now);
+
+    if (nudgeState.variantChangeTimes.length >= 3) {
+      queueNudge("variant_flipping");
+    }
+  }
+
+  function startResultsObserver() {
+    if (!window.IntersectionObserver) {
+      return;
+    }
+
+    var targets = queryAllSafe(nudgeConfig.resultsSelector);
+    if (targets.length === 0) {
+      return;
+    }
+
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+          if (!nudgeState.resultsTimer) {
+            nudgeState.resultsTimer = window.setTimeout(function () {
+              queueNudge("results_anxiety");
+            }, 3000);
+          }
+        } else if (nudgeState.resultsTimer) {
+          window.clearTimeout(nudgeState.resultsTimer);
+          nudgeState.resultsTimer = null;
+        }
+      });
+    }, { threshold: [0, 0.5, 1] });
+
+    targets.forEach(function (target) {
+      observer.observe(target);
+    });
+  }
+
+  function startHesitationTimer() {
+    if (!isProductPage()) {
+      return;
+    }
+
+    window.setInterval(function () {
+      if (document.visibilityState === "hidden" || nudgeState.addToCartClicked) {
+        return;
+      }
+
+      nudgeState.visibleProductSeconds += 1;
+
+      if (nudgeState.visibleProductSeconds >= 45) {
+        queueNudge("hesitation");
+      }
+    }, 1000);
+  }
+
+  function queueNudge(id) {
+    var definition = nudgeConfig.nudges[id];
+
+    if (!definition || nudgeState.fired[id]) {
+      return;
+    }
+
+    nudgeState.fired[id] = true;
+    nudgeState.pending.push({
+      id: id,
+      priority: definition.priority,
+      message: definition.message,
+      chips: definition.chips
+    });
+
+    if (!nudgeState.flushTimer) {
+      nudgeState.flushTimer = window.setTimeout(flushNudges, 250);
+    }
+  }
+
+  function flushNudges() {
+    var now = Date.now();
+    nudgeState.flushTimer = null;
+
+    if (nudgeState.pending.length === 0) {
+      return;
+    }
+
+    if (now < nudgeState.cooldownUntil) {
+      nudgeState.flushTimer = window.setTimeout(flushNudges, nudgeState.cooldownUntil - now);
+      return;
+    }
+
+    nudgeState.pending.sort(function (left, right) {
+      return left.priority - right.priority;
+    });
+
+    var next = nudgeState.pending.shift();
+    setOpen(true);
+    appendNudge(next.message, next.chips, next.id);
+    nudgeState.cooldownUntil = Date.now() + 20000;
+
+    if (nudgeState.pending.length > 0) {
+      nudgeState.flushTimer = window.setTimeout(flushNudges, 20000);
+    }
+  }
+
+  function isSelectedVariantUnavailable() {
+    var addButton = getAddToCartButton();
+
+    if (addButton) {
+      return addButton.disabled ||
+        addButton.getAttribute("aria-disabled") === "true" ||
+        /\b(sold out|out of stock|unavailable)\b/i.test(addButton.textContent || "");
+    }
+
+    return /\b(sold out|out of stock|currently unavailable)\b/i.test(getVisibleBodyText().slice(0, 4000));
+  }
+
+  function isPreorderProduct() {
+    if (nudgeConfig.preorder === true) {
+      return true;
+    }
+
+    if (nudgeConfig.preorderSelector && queryOneSafe(nudgeConfig.preorderSelector)) {
+      return true;
+    }
+
+    var text = getVisibleBodyText().slice(0, 6000).toLowerCase();
+    return nudgeConfig.preorderKeywords.some(function (keyword) {
+      return keyword && text.indexOf(keyword.toLowerCase()) !== -1;
+    });
+  }
+
+  function isThirdProductView() {
+    if (!isProductPage() || !window.sessionStorage) {
+      return false;
+    }
+
+    var productKey = getProductKey();
+    if (!productKey) {
+      return false;
+    }
+
+    var key = "wisp_product_views:" + siteId + ":" + productKey;
+    var current = 0;
+
+    try {
+      current = parseInt(window.sessionStorage.getItem(key) || "0", 10) || 0;
+      current += 1;
+      window.sessionStorage.setItem(key, String(current));
+    } catch (error) {
+      return false;
+    }
+
+    return current === 3;
+  }
+
+  function isProductPage() {
+    if (dataset.productPage === "true") {
+      return true;
+    }
+
+    if (dataset.productPage === "false") {
+      return false;
+    }
+
+    return /\/products?\//i.test(window.location.pathname) ||
+      !!queryOneSafe("[data-product], [itemtype*='Product'], form[action*='/cart/add']");
+  }
+
+  function getProductKey() {
+    var canonical = queryOneSafe("link[rel='canonical']");
+    var value = canonical && canonical.href ? canonical.href : window.location.href.split("#")[0];
+
+    return value.replace(/[?&]variant=[^&]+/i, "").replace(/\/$/, "");
+  }
+
+  function getSelectedVariantKey() {
+    var variantParam = "";
+
+    try {
+      variantParam = new URL(window.location.href).searchParams.get("variant") || "";
+    } catch (error) {
+      variantParam = "";
+    }
+
+    var values = [];
+    var controls = queryAllSafe("select[name*='option'], select[name='id'], input[name*='option']:checked, input[name='id']:checked, [data-selected-variant], [data-variant-id]");
+
+    controls.forEach(function (control) {
+      var value = control.value ||
+        control.getAttribute("data-selected-variant") ||
+        control.getAttribute("data-variant-id") ||
+        control.textContent;
+
+      if (value) {
+        values.push(normalizeText(value));
+      }
+    });
+
+    return [variantParam].concat(values).filter(Boolean).join("|") || window.location.href;
+  }
+
+  function isVariantControl(target) {
+    var element = getElement(target);
+
+    if (!element || isAddToCartControl(element)) {
+      return false;
+    }
+
+    return !!closestSafe(element, "select[name='id'], select[name*='option'], input[name='id'], input[name*='option'], [data-variant-id], [data-variant], [data-option], [class*='variant'], [class*='swatch'], [class*='option']");
+  }
+
+  function isAddToCartControl(target) {
+    var element = getElement(target);
+
+    return !!element && !!closestSafe(element, "button[name='add'], button[type='submit'][name='add'], form[action*='/cart/add'] button[type='submit'], [data-add-to-cart], [data-testid*='add-to-cart']");
+  }
+
+  function getAddToCartButton() {
+    return queryOneSafe("button[name='add'], button[type='submit'][name='add'], form[action*='/cart/add'] button[type='submit'], [data-add-to-cart], [data-testid*='add-to-cart']");
+  }
+
+  function getVisibleBodyText() {
+    if (document.body && typeof document.body.innerText === "string") {
+      return normalizeText(document.body.innerText);
+    }
+
+    return collectPageText();
+  }
+
+  function getNudgeConfig(source) {
+    var faqChips = parseList(source.faqChips, ["Ingredients", "Size", "Usage"]);
+    var topQuestionChips = parseList(source.topQuestions, [
+      "What do people ask most?",
+      "Is this right for me?",
+      "How do I use it?"
+    ]);
+
+    return {
+      enabled: source.nudges !== "false",
+      preorder: source.preorder === "true",
+      preorderSelector: source.preorderSelector || "",
+      preorderKeywords: parseList(source.preorderKeywords, ["pre-order", "preorder", "pre order"]),
+      resultsSelector: source.resultsSelector || "[data-wisp-results], [id*='review'], [class*='review'], [id*='results'], [class*='results']",
+      nudges: {
+        out_of_stock: {
+          priority: 1,
+          message: "Out of stock? We can remind you once it's back.",
+          chips: ["Remind me"]
+        },
+        preorder: {
+          priority: 2,
+          message: "This product is on pre-order, so delivery might take a little longer.",
+          chips: ["When will it arrive?"]
+        },
+        variant_flipping: {
+          priority: 3,
+          message: "Not sure which one fits? I can help you pick.",
+          chips: ["Help me choose", "What's the difference?"]
+        },
+        results_anxiety: {
+          priority: 4,
+          message: "Want to know what to expect and when?",
+          chips: ["Results & timelines", "Is it right for me?"]
+        },
+        hesitation: {
+          priority: 5,
+          message: "Questions about ingredients, size or usage?",
+          chips: faqChips
+        },
+        repeat_views: {
+          priority: 6,
+          message: "Still thinking about this one? Here's what people ask most.",
+          chips: topQuestionChips
+        }
+      }
+    };
+  }
+
+  function parseList(value, fallback) {
+    if (typeof value !== "string" || !value.trim()) {
+      return fallback;
+    }
+
+    return value.split(value.indexOf("|") === -1 ? "," : "|").map(function (item) {
+      return normalizeText(item);
+    }).filter(Boolean);
+  }
+
+  function queryOneSafe(selector) {
+    if (!selector) {
+      return null;
+    }
+
+    try {
+      return document.querySelector(selector);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function queryAllSafe(selector) {
+    if (!selector) {
+      return [];
+    }
+
+    try {
+      return Array.prototype.slice.call(document.querySelectorAll(selector));
+    } catch (error) {
+      return [];
+    }
+  }
+
+  function closestSafe(element, selector) {
+    if (!element || !selector) {
+      return null;
+    }
+
+    try {
+      return element.closest(selector);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function getElement(target) {
+    if (!target) {
+      return null;
+    }
+
+    return target.nodeType === 1 ? target : target.parentElement;
   }
 
   function setSending(nextSending) {
@@ -238,6 +696,90 @@ host.style.setProperty("display", "block", "important");
     } catch (error) {
       return null;
     }
+  }
+
+  function getPageContext() {
+    return {
+      title: normalizeText(document.title || "").slice(0, 300),
+      content: collectPageText().slice(0, pageContentLimit)
+    };
+  }
+
+  function collectPageText() {
+    var nodeFilter = window.NodeFilter;
+
+    if (!document.body || !document.createTreeWalker || !nodeFilter) {
+      return "";
+    }
+
+    var walker = document.createTreeWalker(document.body, nodeFilter.SHOW_TEXT, {
+      acceptNode: function (node) {
+        if (!node.nodeValue || !node.nodeValue.trim()) {
+          return nodeFilter.FILTER_REJECT;
+        }
+
+        return isReadableTextNode(node) ? nodeFilter.FILTER_ACCEPT : nodeFilter.FILTER_REJECT;
+      }
+    });
+    var chunks = [];
+    var totalLength = 0;
+    var node;
+
+    while ((node = walker.nextNode())) {
+      var text = normalizeText(node.nodeValue);
+
+      if (!text) {
+        continue;
+      }
+
+      chunks.push(text);
+      totalLength += text.length + 1;
+
+      if (totalLength >= pageContentLimit) {
+        break;
+      }
+    }
+
+    return normalizeText(chunks.join(" "));
+  }
+
+  function isReadableTextNode(node) {
+    var element = node.parentElement;
+
+    while (element && element !== document.body) {
+      var tagName = element.tagName ? element.tagName.toLowerCase() : "";
+
+      if (
+        tagName === "script" ||
+        tagName === "style" ||
+        tagName === "noscript" ||
+        tagName === "svg" ||
+        tagName === "canvas" ||
+        tagName === "iframe" ||
+        tagName === "form" ||
+        tagName === "input" ||
+        tagName === "textarea" ||
+        tagName === "select" ||
+        tagName === "button" ||
+        element.getAttribute("aria-hidden") === "true" ||
+        element.hasAttribute("data-wisp-chat-host")
+      ) {
+        return false;
+      }
+
+      var style = window.getComputedStyle ? window.getComputedStyle(element) : null;
+      if (style && (style.display === "none" || style.visibility === "hidden")) {
+        return false;
+      }
+
+      element = element.parentElement;
+    }
+
+    return true;
+  }
+
+  function normalizeText(value) {
+    return String(value || "").replace(/\s+/g, " ").trim();
   }
 
   function getSessionId(key) {
