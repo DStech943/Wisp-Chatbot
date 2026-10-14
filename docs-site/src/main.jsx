@@ -815,6 +815,8 @@ function CustomizePanel({ uiSettings, setUiSettings, saveSettings, busy, status 
   const update = (key, value) => {
     setUiSettings((current) => ({ ...current, [key]: value }));
   };
+  const accentColor = normalizeHexColor(uiSettings.accentColor) || "#172033";
+  const launcherStyle = String(uiSettings.launcherStyle || "Glassy").toLowerCase();
 
   return (
     <Reveal as="section" className="settings-grid" aria-label="Customize chatbot UI">
@@ -822,7 +824,7 @@ function CustomizePanel({ uiSettings, setUiSettings, saveSettings, busy, status 
         <div>
           <p className="eyebrow">Customize</p>
           <h2>Chatbot UI</h2>
-          <p className="muted-copy">This is the UI surface for future theme controls. Saving stores the draft in Supabase.</p>
+          <p className="muted-copy">Saved changes are stored in Supabase and applied by the installed widget when the storefront loads.</p>
         </div>
         <label className="field">
           <span>Bot name</span>
@@ -842,22 +844,42 @@ function CustomizePanel({ uiSettings, setUiSettings, saveSettings, busy, status 
         </label>
         <label className="field">
           <span>Accent color</span>
-          <input type="color" value={uiSettings.accentColor || "#172033"} onChange={(event) => update("accentColor", event.target.value)} />
+          <input type="color" value={accentColor} onChange={(event) => update("accentColor", event.target.value)} />
         </label>
         <div className="settings-actions">
-          <button className="button primary" type="button" disabled={busy} onClick={saveSettings}>{busy ? "Saving..." : "Save UI draft"}</button>
+          <button className="button primary" type="button" disabled={busy} onClick={saveSettings}>{busy ? "Saving..." : "Save customization"}</button>
           <p className="status-text" role="status" aria-live="polite">{status}</p>
         </div>
       </div>
       <div className="customize-preview">
-        <div className="mock-widget">
-          <div className="mock-header">{uiSettings.botName || "Maya"}</div>
-          <div className="mock-body">
-            <p>{uiSettings.welcomeMessage || "Hi this is Maya🤍, how can I help you?"}</p>
-            <span>Track my order</span>
-            <span>Best Sellers</span>
+        <div className="mock-widget-stage" style={{ "--mock-accent": accentColor, "--mock-accent-soft": hexToRgba(accentColor, 0.22) }}>
+          <div className={`mock-widget mock-widget-${launcherStyle}`}>
+            <div className="mock-header">
+              <strong>{uiSettings.botName || "Maya"}</strong>
+              <span aria-hidden="true">x</span>
+            </div>
+            <div className="mock-body">
+              <p>{uiSettings.welcomeMessage || "Hi this is Maya🤍, how can I help you?"}</p>
+            </div>
+            <div className="mock-footer">
+              <div className="mock-suggestions">
+                <span>Track my order</span>
+                <span>Chat with our Team</span>
+                <span>Best Sellers</span>
+                <span>Ongoing Discounts?</span>
+              </div>
+              <div className="mock-input">
+                <span>Ask me anything</span>
+                <b aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none"><path d="M12 19V5m0 0-6 6m6-6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                </b>
+              </div>
+              <div className="mock-powered">Powered by <img src="https://wisp-widget.pages.dev/Pixie.png" alt="" /><strong>Pixie</strong></div>
+            </div>
           </div>
-          <div className="mock-input">Ask me anything</div>
+          <div className={`mock-launcher mock-launcher-${launcherStyle}`} aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M7.5 17.5 4 20V6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8.5a2.5 2.5 0 0 1-2.5 2.5h-10Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </div>
         </div>
       </div>
     </Reveal>
@@ -943,6 +965,29 @@ function NudgesPanel({ nudgeSettings, setNudgeSettings, saveSettings, busy, stat
 
 function splitChipInput(value) {
   return value.split(value.indexOf("|") === -1 ? "," : "|").map((item) => item.trim()).filter(Boolean);
+}
+
+function normalizeHexColor(value) {
+  const color = String(value || "").trim();
+
+  if (/^#[0-9a-f]{6}$/i.test(color)) {
+    return color;
+  }
+
+  if (/^#[0-9a-f]{3}$/i.test(color)) {
+    return `#${color[1]}${color[1]}${color[2]}${color[2]}${color[3]}${color[3]}`;
+  }
+
+  return "";
+}
+
+function hexToRgba(color, alpha) {
+  const normalized = normalizeHexColor(color) || "#172033";
+  const red = parseInt(normalized.slice(1, 3), 16);
+  const green = parseInt(normalized.slice(3, 5), 16);
+  const blue = parseInt(normalized.slice(5, 7), 16);
+
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }
 
 function normalizeNudgeSettings(value) {

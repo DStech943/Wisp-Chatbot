@@ -21,6 +21,7 @@
   var isHandoff = false;
   var placeholderTimer = null;
   var placeholderText = "Ask me anything";
+  var uiConfig = getUiConfig(dataset);
   var nudgeConfig = getNudgeConfig(dataset);
   var nudgeState = {
     fired: {},
@@ -44,13 +45,15 @@ host.style.setProperty("display", "block", "important");
   shadow.innerHTML = [
     "<style>",
     "@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap');",
-    ":host { all: initial; position: fixed; right: 20px; bottom: 20px; z-index: 2147483647; font-family: Manrope, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; font-weight: 500; color: #172033; }",
+    ":host { all: initial; --wisp-accent: #172033; --wisp-accent-soft: rgba(23, 32, 51, 0.18); --wisp-accent-contrast: #ffffff; position: fixed; right: 20px; bottom: 20px; z-index: 2147483647; font-family: Manrope, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; font-weight: 500; color: #172033; }",
     "* { box-sizing: border-box; }",
     ".wisp-root { position: relative; width: 64px; height: 64px; }",
     ".wisp-bubble { width: 64px; height: 64px; border: 1px solid rgba(255, 255, 255, 0.62); border-radius: 50%; background: rgba(255, 255, 255, 0.72); color: #172033; box-shadow: 0 18px 44px rgba(23, 32, 51, 0.18); cursor: pointer; display: grid; place-items: center; backdrop-filter: blur(18px) saturate(150%); -webkit-backdrop-filter: blur(18px) saturate(150%); transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease; }",
     ".wisp-bubble:hover { transform: translateY(-1px); background: rgba(255, 255, 255, 0.88); box-shadow: 0 22px 52px rgba(23, 32, 51, 0.22); }",
-    ".wisp-bubble:focus-visible, .wisp-send:focus-visible { outline: 3px solid rgba(68, 97, 140, 0.22); outline-offset: 3px; }",
+    ".wisp-bubble:focus-visible, .wisp-send:focus-visible { outline: 3px solid var(--wisp-accent-soft); outline-offset: 3px; }",
     ".wisp-bubble svg { width: 29px; height: 29px; display: block; }",
+    ".wisp-root[data-launcher-style='minimal'] .wisp-bubble { background: #ffffff; border-color: rgba(23, 32, 51, 0.12); box-shadow: 0 10px 26px rgba(23, 32, 51, 0.12); }",
+    ".wisp-root[data-launcher-style='solid'] .wisp-bubble { background: var(--wisp-accent); color: var(--wisp-accent-contrast); border-color: transparent; box-shadow: 0 18px 44px var(--wisp-accent-soft); }",
     ".wisp-teaser { position: absolute; right: 46px; bottom: 50px; width: 218px; min-height: 54px; padding: 10px 34px 10px 12px; border: 1px solid rgba(23, 32, 51, 0.12); border-radius: 8px; background: #ffffff; color: #172033; box-shadow: 0 14px 34px rgba(23, 32, 51, 0.18); cursor: pointer; display: block; text-align: left; font: inherit; font-size: 12px; line-height: 16px; font-weight: 700; opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(8px) scale(0.96); transform-origin: right bottom; transition: opacity 180ms ease, transform 180ms ease, visibility 0ms linear 180ms; }",
     ".wisp-teaser::before { content: ''; position: absolute; right: -8px; bottom: 14px; border-width: 8px 0 8px 9px; border-style: solid; border-color: transparent transparent transparent rgba(23, 32, 51, 0.12); }",
     ".wisp-teaser::after { content: ''; position: absolute; right: -7px; bottom: 15px; border-width: 7px 0 7px 8px; border-style: solid; border-color: transparent transparent transparent #ffffff; }",
@@ -89,13 +92,13 @@ host.style.setProperty("display", "block", "important");
     ".wisp-input:focus { outline: none; }",
     ".wisp-input::placeholder { color: #aeb4c2; font-weight: 600; }",
     ".wisp-input:disabled { color: #8b92a3; }",
-    ".wisp-send { width: 40px; height: 40px; flex: 0 0 40px; border: 1px solid rgba(23, 32, 51, 0.08); border-radius: 50%; background: rgba(23, 32, 51, 0.88); color: #ffffff; cursor: pointer; display: grid; place-items: center; box-shadow: 0 8px 22px rgba(23, 32, 51, 0.18); }",
-    ".wisp-send:hover { background: rgba(42, 51, 70, 0.92); }",
+    ".wisp-send { width: 40px; height: 40px; flex: 0 0 40px; border: 1px solid rgba(23, 32, 51, 0.08); border-radius: 50%; background: var(--wisp-accent); color: var(--wisp-accent-contrast); cursor: pointer; display: grid; place-items: center; box-shadow: 0 8px 22px var(--wisp-accent-soft); }",
+    ".wisp-send:hover { filter: brightness(1.08); }",
     ".wisp-send:disabled { cursor: not-allowed; opacity: 0.6; }",
     ".wisp-send svg { width: 18px; height: 18px; display: block; }",
     ".wisp-powered { height: 18px; margin-top: 7px; display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 9px; line-height: 1; color: #6b7280; font-weight: 700; }",
     ".wisp-powered img { width: 16px; height: 16px; object-fit: contain; display: block; }",
-    ".wisp-powered strong { color: #2476ff; font-size: 11px; font-weight: 800; }",
+    ".wisp-powered strong { color: var(--wisp-accent); font-size: 11px; font-weight: 800; }",
     "@media (max-width: 479px) {",
     "  :host { right: 0; bottom: 0; }",
     "  .wisp-root { width: 100vw; height: 100vh; pointer-events: none; }",
@@ -105,16 +108,16 @@ host.style.setProperty("display", "block", "important");
     "  .wisp-root[data-open='true'] .wisp-bubble { display: none; }",
     "}",
     "</style>",
-    "<div class=\"wisp-root\" data-open=\"false\" data-typing=\"false\">",
+    "<div class=\"wisp-root\" data-open=\"false\" data-typing=\"false\" data-launcher-style=\"glassy\">",
     "  <section class=\"wisp-panel\" aria-label=\"Chat\" aria-hidden=\"true\">",
     "    <header class=\"wisp-header\">",
-    "      <h2 class=\"wisp-title\">Chat with us</h2>",
+    "      <h2 class=\"wisp-title\" data-wisp-title></h2>",
     "      <button class=\"wisp-close\" type=\"button\" aria-label=\"Close chat\">",
     "        <svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M18.3 5.7a1 1 0 0 0-1.4 0L12 10.6 7.1 5.7a1 1 0 1 0-1.4 1.4l4.9 4.9-4.9 4.9a1 1 0 1 0 1.4 1.4l4.9-4.9 4.9 4.9a1 1 0 0 0 1.4-1.4L13.4 12l4.9-4.9a1 1 0 0 0 0-1.4Z\"/></svg>",
     "      </button>",
     "    </header>",
     "    <div class=\"wisp-messages\" role=\"log\" aria-live=\"polite\" aria-relevant=\"additions\">",
-    "      <div class=\"wisp-message wisp-message-assistant\">Hi this is Maya🤍, how can I help you?</div>",
+    "      <div class=\"wisp-message wisp-message-assistant\" data-wisp-welcome-message></div>",
     "      <div class=\"wisp-typing\" aria-label=\"Assistant is typing\">",
     "        <span class=\"wisp-dot\"></span><span class=\"wisp-dot\"></span><span class=\"wisp-dot\"></span>",
     "      </div>",
@@ -150,6 +153,8 @@ host.style.setProperty("display", "block", "important");
   var bubble = shadow.querySelector(".wisp-bubble");
   var teaser = shadow.querySelector(".wisp-teaser");
   var teaserText = shadow.querySelector(".wisp-teaser-text");
+  var title = shadow.querySelector("[data-wisp-title]");
+  var welcomeMessage = shadow.querySelector("[data-wisp-welcome-message]");
   var closeButton = shadow.querySelector(".wisp-close");
   var messages = shadow.querySelector(".wisp-messages");
   var typing = shadow.querySelector(".wisp-typing");
@@ -158,6 +163,8 @@ host.style.setProperty("display", "block", "important");
   var sendButton = shadow.querySelector(".wisp-send");
   var suggestions = shadow.querySelector("[data-wisp-suggestions]");
   var suggestionButtons = Array.prototype.slice.call(shadow.querySelectorAll("[data-wisp-suggestion]"));
+
+  applyUiConfig();
 
   bubble.addEventListener("click", function () {
     setOpen(!isOpen);
@@ -385,7 +392,7 @@ host.style.setProperty("display", "block", "important");
     }
 
     window.setTimeout(function () {
-      showTeaser("Hi this is Maya🤍, how can I help you?");
+      showTeaser(uiConfig.welcomeMessage);
       nudgeState.cooldownUntil = Math.max(nudgeState.cooldownUntil, Date.now() + 8000);
     }, 900);
   }
@@ -685,6 +692,15 @@ host.style.setProperty("display", "block", "important");
     return collectPageText();
   }
 
+  function getUiConfig(source) {
+    return {
+      botName: normalizeText(source.botName || source.chatTitle || "Maya").slice(0, 80) || "Maya",
+      welcomeMessage: normalizeText(source.welcomeMessage || "Hi this is Maya🤍, how can I help you?").slice(0, 240) || "Hi this is Maya🤍, how can I help you?",
+      launcherStyle: normalizeLauncherStyle(source.launcherStyle) || "glassy",
+      accentColor: normalizeHexColor(source.accentColor) || "#172033"
+    };
+  }
+
   function getNudgeConfig(source) {
     var faqChips = parseList(source.faqChips, ["Ingredients", "Size", "Usage"]);
     var topQuestionChips = parseList(source.topQuestions, [
@@ -764,10 +780,54 @@ host.style.setProperty("display", "block", "important");
         }
 
         applyRemoteNudgeConfig(data.settings.nudge_settings || {});
+        applyRemoteUiConfig(data.settings.ui_settings || {});
+        applyUiConfig();
       })
       .catch(function () {
         // Keep local data-* config when the remote config endpoint is unavailable.
       });
+  }
+
+  function applyRemoteUiConfig(settings) {
+    if (!settings || typeof settings !== "object") {
+      return;
+    }
+
+    var botName = normalizeText(settings.botName || settings.bot_name);
+    var welcome = normalizeText(settings.welcomeMessage || settings.welcome_message);
+    var launcherStyle = normalizeLauncherStyle(settings.launcherStyle || settings.launcher_style);
+    var accentColor = normalizeHexColor(settings.accentColor || settings.accent_color);
+
+    if (botName) {
+      uiConfig.botName = botName.slice(0, 80);
+    }
+
+    if (welcome) {
+      uiConfig.welcomeMessage = welcome.slice(0, 240);
+    }
+
+    if (launcherStyle) {
+      uiConfig.launcherStyle = launcherStyle;
+    }
+
+    if (accentColor) {
+      uiConfig.accentColor = accentColor;
+    }
+  }
+
+  function applyUiConfig() {
+    if (title) {
+      title.textContent = uiConfig.botName;
+    }
+
+    if (welcomeMessage) {
+      welcomeMessage.textContent = uiConfig.welcomeMessage;
+    }
+
+    root.setAttribute("data-launcher-style", uiConfig.launcherStyle);
+    host.style.setProperty("--wisp-accent", uiConfig.accentColor);
+    host.style.setProperty("--wisp-accent-soft", hexToRgba(uiConfig.accentColor, 0.22));
+    host.style.setProperty("--wisp-accent-contrast", getContrastColor(uiConfig.accentColor));
   }
 
   function applyRemoteNudgeConfig(settings) {
@@ -1014,6 +1074,55 @@ host.style.setProperty("display", "block", "important");
 
   function normalizeText(value) {
     return String(value || "").replace(/\s+/g, " ").trim();
+  }
+
+  function normalizeLauncherStyle(value) {
+    var style = normalizeText(value).toLowerCase();
+
+    if (style === "minimal" || style === "solid" || style === "glassy") {
+      return style;
+    }
+
+    return "";
+  }
+
+  function normalizeHexColor(value) {
+    var color = normalizeText(value);
+
+    if (/^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(color)) {
+      return expandHexColor(color);
+    }
+
+    return "";
+  }
+
+  function expandHexColor(color) {
+    if (color.length !== 4) {
+      return color;
+    }
+
+    return "#" + color.charAt(1) + color.charAt(1) + color.charAt(2) + color.charAt(2) + color.charAt(3) + color.charAt(3);
+  }
+
+  function hexToRgba(color, alpha) {
+    var normalized = normalizeHexColor(color) || "#172033";
+    var value = normalized.slice(1);
+    var red = parseInt(value.slice(0, 2), 16);
+    var green = parseInt(value.slice(2, 4), 16);
+    var blue = parseInt(value.slice(4, 6), 16);
+
+    return "rgba(" + red + ", " + green + ", " + blue + ", " + alpha + ")";
+  }
+
+  function getContrastColor(color) {
+    var normalized = normalizeHexColor(color) || "#172033";
+    var value = normalized.slice(1);
+    var red = parseInt(value.slice(0, 2), 16);
+    var green = parseInt(value.slice(2, 4), 16);
+    var blue = parseInt(value.slice(4, 6), 16);
+    var luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255;
+
+    return luminance > 0.62 ? "#172033" : "#ffffff";
   }
 
   function getSessionId(key) {
