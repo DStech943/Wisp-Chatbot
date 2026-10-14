@@ -909,10 +909,17 @@ function NudgesPanel({ nudgeSettings, setNudgeSettings, saveSettings, busy, stat
           <h2>Behavior triggers</h2>
           <p className="muted-copy">Toggle each nudge and edit the message customers see. Chip labels are pipe-separated.</p>
         </div>
-        <label className="switch-row">
-          <input type="checkbox" checked={nudgeSettings.enabled !== false} onChange={(event) => setGlobal("enabled", event.target.checked)} />
-          <span>Enable all nudges</span>
-        </label>
+        <button
+          className="toggle-switch"
+          type="button"
+          role="switch"
+          aria-checked={nudgeSettings.enabled !== false}
+          data-state={nudgeSettings.enabled === false ? "off" : "on"}
+          onClick={() => setGlobal("enabled", nudgeSettings.enabled === false)}
+        >
+          <span className="toggle-track" aria-hidden="true"><span></span></span>
+          <span>{nudgeSettings.enabled === false ? "All off" : "All on"}</span>
+        </button>
       </div>
 
       <div className="nudge-config-row">
@@ -936,10 +943,17 @@ function NudgesPanel({ nudgeSettings, setNudgeSettings, saveSettings, busy, stat
                   <h3>{definition.title}</h3>
                   <p>{definition.trigger}</p>
                 </div>
-                <label className="switch-row">
-                  <input type="checkbox" checked={value.enabled !== false} onChange={(event) => setNudge(definition.id, "enabled", event.target.checked)} />
+                <button
+                  className="toggle-switch"
+                  type="button"
+                  role="switch"
+                  aria-checked={value.enabled !== false}
+                  data-state={value.enabled === false ? "off" : "on"}
+                  onClick={() => setNudge(definition.id, "enabled", value.enabled === false)}
+                >
+                  <span className="toggle-track" aria-hidden="true"><span></span></span>
                   <span>{value.enabled === false ? "Off" : "On"}</span>
-                </label>
+                </button>
               </div>
               <label className="field">
                 <span>Message</span>

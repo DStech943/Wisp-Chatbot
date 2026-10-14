@@ -84,8 +84,9 @@ host.style.setProperty("display", "block", "important");
     ".wisp-dot:nth-child(3) { animation-delay: 240ms; }",
     "@keyframes wispPulse { 0%, 80%, 100% { opacity: 0.35; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }",
     "@keyframes wispMessageIn { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }",
-    ".wisp-footer { padding: 10px 12px 8px; background: rgba(232, 226, 216, 0.44); border-top: 1px solid rgba(23, 32, 51, 0.08); backdrop-filter: blur(20px) saturate(140%); -webkit-backdrop-filter: blur(20px) saturate(140%); }",
-    ".wisp-suggestions { padding: 0 2px 8px; display: flex; flex-wrap: wrap; gap: 7px; transition: opacity 160ms ease, transform 160ms ease; }",
+    ".wisp-footer { position: relative; padding: 10px 12px 8px; background: rgba(232, 226, 216, 0.44); backdrop-filter: blur(20px) saturate(140%); -webkit-backdrop-filter: blur(20px) saturate(140%); }",
+    ".wisp-suggestions { position: relative; margin-bottom: 8px; padding: 0 2px 6px; display: flex; flex-wrap: wrap; gap: 7px; opacity: 0; transform: translateY(8px); transition: opacity 220ms ease, transform 220ms cubic-bezier(0.16, 1, 0.3, 1); }",
+    ".wisp-root[data-open='true'] .wisp-suggestions { opacity: 1; transform: translateY(0); transition-delay: 90ms; }",
     ".wisp-suggestions[data-hidden='true'] { display: none; }",
     ".wisp-form { height: 50px; padding: 4px 5px 4px 16px; background: rgba(255, 255, 255, 0.54); border: 1px solid rgba(255, 255, 255, 0.66); border-radius: 18px; display: flex; align-items: center; gap: 8px; box-shadow: inset 0 1px 2px rgba(23, 32, 51, 0.04), 0 10px 28px rgba(23, 32, 51, 0.08); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }",
     ".wisp-input { min-width: 0; flex: 1; height: 40px; border: 0; border-radius: 14px; padding: 0; font: inherit; font-size: 16px; font-weight: 600; color: #172033; background: transparent; }",
@@ -212,6 +213,7 @@ host.style.setProperty("display", "block", "important");
 
     if (isOpen) {
       hideTeaser();
+      clearPendingNudges();
       animatePlaceholder();
       window.setTimeout(function () {
         input.focus();
@@ -480,6 +482,11 @@ host.style.setProperty("display", "block", "important");
     }
 
     nudgeState.fired[id] = true;
+
+    if (isOpen) {
+      return;
+    }
+
     nudgeState.pending.push({
       id: id,
       priority: definition.priority,
@@ -497,6 +504,11 @@ host.style.setProperty("display", "block", "important");
     nudgeState.flushTimer = null;
 
     if (nudgeState.pending.length === 0) {
+      return;
+    }
+
+    if (isOpen) {
+      nudgeState.pending = [];
       return;
     }
 
@@ -540,6 +552,15 @@ host.style.setProperty("display", "block", "important");
     if (nudgeState.teaserTimer) {
       window.clearTimeout(nudgeState.teaserTimer);
       nudgeState.teaserTimer = null;
+    }
+  }
+
+  function clearPendingNudges() {
+    nudgeState.pending = [];
+
+    if (nudgeState.flushTimer) {
+      window.clearTimeout(nudgeState.flushTimer);
+      nudgeState.flushTimer = null;
     }
   }
 
