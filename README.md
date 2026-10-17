@@ -13,7 +13,7 @@ Brand website or Shopify storefront
 Supabase Edge Function
   validates Origin + site_id against fp3.brands
   calls the brand backend server-side
-  stores successful conversations in fp3.conversations
+  stores successful conversations in cx_copilot.wisp_messages
         |
         | POST /api/widget/chat
         v

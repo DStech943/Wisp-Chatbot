@@ -91,19 +91,35 @@ async function getConversations(siteId: string): Promise<ConversationRow[]> {
   try {
     return await sql<ConversationRow[]>`
       select
-        id,
-        site_id,
-        session_id,
-        message,
-        reply,
-        handoff,
-        platform,
-        page_url,
-        origin,
-        created_at
-      from fp3.conversations
-      where site_id = ${siteId}
-      order by created_at desc
+        customer.id,
+        customer.site_id,
+        customer.conversation_id as session_id,
+        customer.content as message,
+        coalesce(assistant.content, '') as reply,
+        coalesce((assistant.meta_data ->> 'handoff')::boolean, thread.handoff, false) as handoff,
+        customer.platform,
+        customer.meta_data ->> 'page_url' as page_url,
+        customer.meta_data ->> 'origin' as origin,
+        customer.timestamp as created_at
+      from cx_copilot.wisp_messages as customer
+      inner join cx_copilot.wisp_threads as thread
+        on thread.id = customer.thread_id
+      left join lateral (
+        select
+          assistant.content,
+          assistant.meta_data
+        from cx_copilot.wisp_messages as assistant
+        where assistant.thread_id = customer.thread_id
+          and assistant.role = 'assistant'
+          and assistant.direction = 'outbound'
+          and assistant.timestamp > customer.timestamp
+        order by assistant.timestamp asc, assistant.created_at asc
+        limit 1
+      ) as assistant on true
+      where customer.site_id = ${siteId}
+        and customer.role = 'customer'
+        and customer.direction = 'inbound'
+      order by customer.timestamp desc
       limit 200
     `;
   } finally {

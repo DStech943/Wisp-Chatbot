@@ -4,7 +4,7 @@ This folder contains the Supabase database migrations and Edge Functions for the
 
 ```text
 widget.js -> widget-chat Edge Function -> brand backend
-dashboard -> get-conversations Edge Function -> fp3.conversations
+dashboard -> get-conversations Edge Function -> cx_copilot.wisp_messages
 ```
 
 Supabase is the source of truth for brand registration, CORS, backend routing, and conversation history.
@@ -21,7 +21,8 @@ Run the SQL migrations in order from `supabase/migrations`:
 The important tables are:
 
 - `fp3.brands`: one row per brand/site, including allowed origins and backend URL.
-- `fp3.conversations`: one row per successful chat message/reply.
+- `cx_copilot.wisp_threads`: one row per browser chat session.
+- `cx_copilot.wisp_messages`: one row per customer or assistant message.
 
 Both tables have RLS enabled and are revoked from `anon` and `authenticated`. The Edge Functions use the database connection URL directly.
 
@@ -147,7 +148,7 @@ with:
 X-Dashboard-Key: WISP_DASHBOARD_KEY
 ```
 
-The function returns the newest 200 rows from `fp3.conversations` for that `site_id`.
+The function returns the newest 200 customer turns and their assistant replies for that `site_id`.
 
 ## CORS Note
 

@@ -91,9 +91,9 @@ Deno.serve(async (request) => {
       backendPayload,
     );
 
-    if (backendResponse.status === 200) {
-      await storeConversation({
-        brand_id: brand.brand_id,
+    // Persist every successful backend response, including other 2xx statuses.
+    if (backendResponse.status >= 200 && backendResponse.status < 300) {
+      await storeWispConversation({
         site_id: brand.site_id,
         session_id: backendPayload.session_id,
         message: backendPayload.message,
@@ -102,6 +102,8 @@ Deno.serve(async (request) => {
         platform: backendPayload.platform,
         page_url: backendPayload.page_url,
         origin,
+        page_title: backendPayload.page_title,
+        page_content: backendPayload.page_content,
       });
     }
 
@@ -298,8 +300,7 @@ function normalizeBackendBody(body: { reply?: unknown; handoff?: unknown }): {
   };
 }
 
-async function storeConversation(row: {
-  brand_id: string;
+async function storeWispConversation(row: {
   site_id: string;
   session_id: string;
   message: string;
@@ -308,35 +309,34 @@ async function storeConversation(row: {
   platform: string;
   page_url: string | null;
   origin: string;
+  page_title: string | null;
+  page_content: string | null;
 }): Promise<void> {
   const sql = postgres(getDbUrl(), { max: 1 });
 
   try {
     await sql`
-      insert into fp3.conversations (
-        brand_id,
-        site_id,
-        session_id,
-        message,
-        reply,
-        handoff,
-        platform,
-        page_url,
-        origin
-      ) values (
-        ${row.brand_id},
+      select cx_copilot.ingest_wisp_chat(
         ${row.site_id},
         ${row.session_id},
+        ${row.platform},
         ${row.message},
         ${row.reply},
         ${row.handoff},
-        ${row.platform},
         ${row.page_url},
-        ${row.origin}
+        ${row.origin},
+        ${sql.json({
+          page_title: row.page_title,
+          page_content: row.page_content,
+        })}
       )
     `;
   } catch (error) {
-    console.error("Conversation insert failed", error);
+    console.error("Wisp conversation insert failed", {
+      site_id: row.site_id,
+      session_id: row.session_id,
+      error,
+    });
   } finally {
     await sql.end();
   }
